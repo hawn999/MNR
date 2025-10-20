@@ -7,8 +7,8 @@ import torch.nn.functional as F
 import copy
 import random
 from .network_utils import (
-    Classifier, 
-    ResBlock, 
+    Classifier,
+    ResBlock,
     ConvNormAct,
     convert_to_rpm_matrix_v9,
     convert_to_rpm_matrix_v6,
@@ -22,7 +22,7 @@ from .Pred import Pred
 from .MM import MM
 from .MRnet import MRNet
 from torch.nn import init
-
+from .HCVARR import swinB
 
 class SymbolEncoding(nn.Module):
     def __init__(self, num_contexts=4, d_model=32, f_len=24):
@@ -32,6 +32,7 @@ class SymbolEncoding(nn.Module):
 
     def forward(self):
         return self.position_embeddings
+
 
 class PositionalEncoding(nn.Module):
     def __init__(self, d_model, max_len=5000):
@@ -48,8 +49,9 @@ class PositionalEncoding(nn.Module):
         # x: [seq_len, batch_size, d_model]
         return x + self.pe[:, :x.size(1), :]
 
+
 class SlotAttention(nn.Module):
-    def __init__(self, num_slots, dim, iters = 3, eps = 1e-8, hidden_dim = 128):
+    def __init__(self, num_slots, dim, iters=3, eps=1e-8, hidden_dim=128):
         super().__init__()
         self.dim = dim
         self.num_slots = num_slots
@@ -72,23 +74,23 @@ class SlotAttention(nn.Module):
 
         self.mlp = nn.Sequential(
             nn.Linear(dim, hidden_dim),
-            nn.ReLU(inplace = True),
+            nn.ReLU(inplace=True),
             nn.Linear(hidden_dim, dim)
         )
 
-        self.norm_input  = nn.LayerNorm(dim)
-        self.norm_slots  = nn.LayerNorm(dim)
+        self.norm_input = nn.LayerNorm(dim)
+        self.norm_slots = nn.LayerNorm(dim)
         self.norm_pre_ff = nn.LayerNorm(dim)
 
-    def forward(self, inputs, num_slots = None):
+    def forward(self, inputs, num_slots=None):
         b, n, d, device, dtype = *inputs.shape, inputs.device, inputs.dtype
         n_s = num_slots if num_slots is not None else self.num_slots
         mu = self.slots_mu.expand(b, n_s, -1)
         sigma = self.slots_logsigma.exp().expand(b, n_s, -1)
 
-        slots = mu + sigma * torch.randn(mu.shape, device = device, dtype = dtype)
+        slots = mu + sigma * torch.randn(mu.shape, device=device, dtype=dtype)
 
-        inputs = self.norm_input(inputs)        
+        inputs = self.norm_input(inputs)
         k, v = self.to_k(inputs), self.to_v(inputs)
 
         for _ in range(self.iters):
@@ -114,33 +116,33 @@ class SlotAttention(nn.Module):
 
         return slots
 
+
 class FusionAttention(nn.Module):
     def __init__(
-        self,
-        in_planes,
-        dropout = 0.1,
-        num_heads = 8
-    ): 
+            self,
+            in_planes,
+            dropout=0.1,
+            num_heads=8
+    ):
         super().__init__()
         self.q = nn.Linear(in_planes, in_planes)
         self.k = nn.Linear(in_planes, in_planes)
         self.v = nn.Linear(in_planes, in_planes)
-        self.num_heads=num_heads
-        self.head_dim=in_planes//num_heads
+        self.num_heads = num_heads
+        self.head_dim = in_planes // num_heads
         self.m = nn.Linear(in_planes, in_planes)
         self.drop1 = nn.Dropout(dropout)
         self.drop2 = nn.Dropout(dropout)
 
-
     def forward(self, q, k, v):
         shortcut = q
-        b,t,l,c = q.shape
-        b_,t_,l_,c_ = b,t,l,c
+        b, t, l, c = q.shape
+        b_, t_, l_, c_ = b, t, l, c
 
         q = self.q(q).reshape(b, t, l, self.num_heads, self.head_dim).permute(0, 1, 3, 2, 4)
         q = F.normalize(q, dim=-1)
 
-        b,t,l,c = k.shape
+        b, t, l, c = k.shape
         k = self.k(k).reshape(b, t, l, self.num_heads, self.head_dim).permute(0, 1, 3, 2, 4)
         k = F.normalize(k, dim=-1)
 
@@ -151,8 +153,9 @@ class FusionAttention(nn.Module):
         atten = self.drop1(F.softmax(atten / math.sqrt(self.head_dim), dim=-1))
         x = (atten @ v)
 
-        x = self.m(x.permute(0,1,3,2,4).reshape(b_,t_,l_,c_))+shortcut
+        x = self.m(x.permute(0, 1, 3, 2, 4).reshape(b_, t_, l_, c_)) + shortcut
         return x
+
 
 class PredictionIntraAttention(nn.Module):
     def __init__(self, d_model, token_len, nhead=8, dropout=0.1, num_contexts=9):
@@ -163,8 +166,8 @@ class PredictionIntraAttention(nn.Module):
         self.m = nn.Linear(d_model, d_model)
         self.drop = nn.Dropout(dropout)
         self.drop2 = nn.Dropout(dropout)
-        self.num_heads=nhead
-        self.head_dim=d_model//nhead
+        self.num_heads = nhead
+        self.head_dim = d_model // nhead
         self.norm1 = nn.LayerNorm((32, num_contexts, token_len))
         self.norm2 = nn.LayerNorm((32, num_contexts, token_len))
 
@@ -177,8 +180,7 @@ class PredictionIntraAttention(nn.Module):
         b, c, t, l = x.shape
         x = self.norm1(x)
         pre_prompt = self.pre_prompt().expand(b, -1, -1, -1)
-        q, k, v = x.permute(0,2,3,1), x.permute(0,2,3,1), x.permute(0,2,3,1)
-
+        q, k, v = x.permute(0, 2, 3, 1), x.permute(0, 2, 3, 1), x.permute(0, 2, 3, 1)
 
         q = F.normalize(self.q(q).reshape(b, t, l, self.num_heads, self.head_dim).permute(0, 1, 3, 2, 4), dim=-1)
         k = F.normalize(self.k(k).reshape(b, t, l, self.num_heads, self.head_dim).permute(0, 1, 3, 2, 4), dim=-1)
@@ -188,51 +190,49 @@ class PredictionIntraAttention(nn.Module):
         atten = F.softmax(atten / math.sqrt(self.head_dim), dim=-1)
         x = self.drop(atten @ v)
 
-        x = self.m(x.permute(0,1,3,2,4).reshape(b,t,l,c)).permute(0,3,1,2).contiguous()
+        x = self.m(x.permute(0, 1, 3, 2, 4).reshape(b, t, l, c)).permute(0, 3, 1, 2).contiguous()
         x = self.norm2(x)
 
         if atten_flag == 1:
-            con = torch.cat([x[:,:,:,:18], pre_prompt[:,:,:,18:]], dim=3)
-            tar = x[:,:,:,18:]
+            con = torch.cat([x[:, :, :, :18], pre_prompt[:, :, :, 18:]], dim=3)
+            tar = x[:, :, :, 18:]
         elif atten_flag == 2:
-            con = torch.cat([x[:,:,:,:12], pre_prompt[:,:,:,12:18], x[:,:,:,18:]], dim=3)
-            tar = x[:,:,:,12:18]
+            con = torch.cat([x[:, :, :, :12], pre_prompt[:, :, :, 12:18], x[:, :, :, 18:]], dim=3)
+            tar = x[:, :, :, 12:18]
         elif atten_flag == 3:
-            con = torch.cat([x[:,:,:,:6], pre_prompt[:,:,:,6:12], x[:,:,:,12:]], dim=3)
-            tar = x[:,:,:,6:12]
+            con = torch.cat([x[:, :, :, :6], pre_prompt[:, :, :, 6:12], x[:, :, :, 12:]], dim=3)
+            tar = x[:, :, :, 6:12]
         else:
-            con = torch.cat([pre_prompt[:,:,:,:6], x[:,:,:,6:]], dim=3)
-            tar = x[:,:,:,:6]
+            con = torch.cat([pre_prompt[:, :, :, :6], x[:, :, :, 6:]], dim=3)
+            tar = x[:, :, :, :6]
 
         p = self.p(con).contiguous()
         p = F.relu(tar) - p
-        # p = tar - p
-      
+
         if atten_flag == 1:
-            x = torch.cat([x[:,:,:,:18], p], dim=-1)
+            x = torch.cat([x[:, :, :, :18], p], dim=-1)
         elif atten_flag == 2:
-            x = torch.cat([x[:,:,:,:12], p, x[:,:,:,18:]], dim=-1)
+            x = torch.cat([x[:, :, :, :12], p, x[:, :, :, 18:]], dim=-1)
         elif atten_flag == 3:
-            x = torch.cat([x[:,:,:,:6], p, x[:,:,:,12:]], dim=-1)
+            x = torch.cat([x[:, :, :, :6], p, x[:, :, :, 12:]], dim=-1)
         else:
-            x = torch.cat([p, x[:,:,:,6:]], dim=-1)
-        # print(x.shape)
-        # return x
-        return self.drop2(x)
+            x = torch.cat([p, x[:, :, :, 6:]], dim=-1)
+        return x
+
 
 class GIPRB(nn.Module):
 
     def __init__(
-        self, 
-        in_planes, 
-        token_len,
-        dropout = 0.0, 
-        num_heads = 8,
-        num_contexts=3
+            self,
+            in_planes,
+            token_len,
+            dropout=0.0,
+            num_heads=8,
+            num_contexts=3
     ):
         super().__init__()
         self.downsample = ConvNormAct(in_planes, in_planes, 1, 0, activate=False)
-        self.lp1 = nn.Linear(in_planes, in_planes*2)
+        self.lp1 = nn.Linear(in_planes, in_planes * 2)
         self.lp2 = nn.Linear(in_planes, in_planes)
         # self.norm = nn.LayerNorm((4, 24, 32))
         # self.norm1 = nn.LayerNorm((4, 24, 32))
@@ -240,50 +240,50 @@ class GIPRB(nn.Module):
         # self.norm3 = nn.LayerNorm((4, 24, 32))
         # self.norm4 = nn.LayerNorm((4, 24, 32))
         # ablation
-        self.norm = nn.LayerNorm((num_contexts+1, 24, 32))
-        self.norm1 = nn.LayerNorm((num_contexts+1, 24, 32))
-        self.norm2 = nn.LayerNorm((num_contexts+1, 24, 32))
-        self.norm3 = nn.LayerNorm((num_contexts+1, 24, 32))
-        self.norm4 = nn.LayerNorm((num_contexts+1, 24, 32))
+        self.norm = nn.LayerNorm((num_contexts + 1, 24, 32))
+        self.norm1 = nn.LayerNorm((num_contexts + 1, 24, 32))
+        self.norm2 = nn.LayerNorm((num_contexts + 1, 24, 32))
+        self.norm3 = nn.LayerNorm((num_contexts + 1, 24, 32))
+        self.norm4 = nn.LayerNorm((num_contexts + 1, 24, 32))
         self.m = nn.Linear(in_planes, in_planes)
         self.drop = nn.Dropout(dropout)
 
         self.pre_att = PredictionIntraAttention(in_planes, nhead=num_heads, token_len=token_len,
-                                                num_contexts=num_contexts+1)  # ablation
+                                                num_contexts=num_contexts + 1)  # ablation
         self.pre_att2 = PredictionInterAttention(in_planes, nhead=num_heads, token_len=token_len,
-                                                 num_contexts=num_contexts+1) # ablation
-        self.conv1 = nn.Sequential(ConvNormAct((num_contexts+1), (num_contexts+1)*4, 3, 1, activate=True),
-                                   ConvNormAct((num_contexts+1)*4, (num_contexts+1), 3, 1, activate=True))
-        self.conv2 = nn.Sequential(ConvNormAct(in_planes, in_planes*4, 3, 1, activate=True),
-                                   ConvNormAct(in_planes*4, in_planes, 3, 1, activate=True))
-        self.conv3 = nn.Sequential(ConvNormAct(in_planes, in_planes*4, 3, 1, activate=True),
-                                   ConvNormAct(in_planes*4, in_planes, 3, 1, activate=True))
+                                                 num_contexts=num_contexts + 1)  # ablation
+        self.conv1 = nn.Sequential(ConvNormAct((num_contexts + 1), (num_contexts + 1) * 4, 3, 1, activate=True),
+                                   ConvNormAct((num_contexts + 1) * 4, (num_contexts + 1), 3, 1, activate=True))
+        self.conv2 = nn.Sequential(ConvNormAct(in_planes, in_planes * 4, 3, 1, activate=True),
+                                   ConvNormAct(in_planes * 4, in_planes, 3, 1, activate=True))
+        self.conv3 = nn.Sequential(ConvNormAct(in_planes, in_planes * 4, 3, 1, activate=True),
+                                   ConvNormAct(in_planes * 4, in_planes, 3, 1, activate=True))
         self.fusion = FusionAttention(in_planes)
-    
+
     def forward(self, x, atten_flag):
         # b, c, t, l = x.shape
         # x = x.permute(0,2,3,1).reshape(b,t*l,c)
         # sltx = self.sltA(x)
         # x = self.cro(x, sltx).reshape(b,t,l,c).permute(0,3,1,2).contiguous()
         shortcut = self.downsample(x)
-        x = F.normalize(x.permute(0,2,3,1), dim=-1)
+        x = F.normalize(x.permute(0, 2, 3, 1), dim=-1)
         g, x = self.lp1(x).chunk(2, dim=-1)
         g = self.m(self.conv1(g))
-        x = x.permute(0,3,1,2)
+        x = x.permute(0, 3, 1, 2)
 
         p1 = self.pre_att(x, atten_flag)
         p2 = self.pre_att2(x, atten_flag)
 
-
-        p = self.conv3(p1+p2).permute(0,2,3,1)
+        p = self.conv3(p1 + p2).permute(0, 2, 3, 1)
         x = self.norm(self.lp2(F.gelu(g) * p)).permute(0, 3, 1, 2).contiguous()
         # p = (p1 + p2).permute(0, 2, 3, 1)
         # x = self.lp2(F.gelu(g) * p).permute(0, 3, 1, 2).contiguous()
 
-        x = self.drop(self.conv2(x))+shortcut
+        x = self.drop(self.conv2(x)) + shortcut
 
-        x = self.fusion(self.norm1(x.permute(0,2,3,1).contiguous()), self.norm2(p1.permute(0,2,3,1)), self.norm3(p2.permute(0,2,3,1)))
-        x = self.norm4(x).permute(0,3,1,2).contiguous()
+        x = self.fusion(self.norm1(x.permute(0, 2, 3, 1).contiguous()), self.norm2(p1.permute(0, 2, 3, 1)),
+                        self.norm3(p2.permute(0, 2, 3, 1)))
+        x = self.norm4(x).permute(0, 3, 1, 2).contiguous()
         # x = self.fusion(x.permute(0, 2, 3, 1).contiguous(), p1.permute(0, 2, 3, 1),
         #                 p2.permute(0, 2, 3, 1))
         # x = x.permute(0, 3, 1, 2).contiguous()
@@ -299,8 +299,8 @@ class PredictionInterAttention(nn.Module):
         self.m = nn.Linear(d_model, d_model)
         self.drop = nn.Dropout(dropout)
         self.drop2 = nn.Dropout(dropout)
-        self.num_heads=nhead
-        self.head_dim=d_model//nhead
+        self.num_heads = nhead
+        self.head_dim = d_model // nhead
 
         self.pre_prompt = SymbolEncoding(1, d_model, token_len)
         self.p = nn.Sequential(ConvNormAct(32, 32, (num_contexts, 1)), nn.Linear(token_len, token_len))
@@ -314,8 +314,7 @@ class PredictionInterAttention(nn.Module):
         x = self.norm1(x)
         b, c, t, l = x.shape
         pre_prompt = self.pre_prompt().expand(b, -1, -1, -1)
-        q, k, v = x.permute(0,2,3,1), x.permute(0,2,3,1), x.permute(0,2,3,1)
-
+        q, k, v = x.permute(0, 2, 3, 1), x.permute(0, 2, 3, 1), x.permute(0, 2, 3, 1)
 
         q = F.normalize(self.q(q).reshape(b, t, l, self.num_heads, self.head_dim).permute(0, 1, 3, 2, 4), dim=-1)
         k = F.normalize(self.k(k).reshape(b, t, l, self.num_heads, self.head_dim).permute(0, 1, 3, 2, 4), dim=-1)
@@ -325,33 +324,31 @@ class PredictionInterAttention(nn.Module):
         atten = F.softmax(atten / math.sqrt(self.head_dim), dim=-1)
         x = self.drop(atten @ v)
 
-        x = self.m(x.permute(0,1,3,2,4).reshape(b,t,l,c)).permute(0,3,1,2).contiguous()
+        x = self.m(x.permute(0, 1, 3, 2, 4).reshape(b, t, l, c)).permute(0, 3, 1, 2).contiguous()
         x = self.norm2(x)
 
         # num_contexts = 4 or 9
-        con = torch.cat([x[:,:,:self.num_contexts-1], pre_prompt], dim=2)
+        con = torch.cat([x[:, :, :self.num_contexts - 1], pre_prompt], dim=2)
         p = self.p(con).contiguous()
-        p = F.relu(x[:,:,self.num_contexts-1:]) - p
-        # p = x[:,:,self.num_contexts-1:] - p
-      
-        x = torch.cat([x[:,:,:self.num_contexts-1], p], dim=2)
-        # return x
-        return self.drop2(x)
+        p = F.relu(x[:, :, self.num_contexts - 1:]) - p
+
+        x = torch.cat([x[:, :, :self.num_contexts - 1], p], dim=2)
+        return x
 
 
 class PredictiveReasoningBlock(nn.Module):
 
     def __init__(
-        self, 
-        in_planes, 
-        ou_planes,
-        steps = 4, 
-        token_len = 24,
-        dropout = 0.1, 
-        num_heads = 8,
-        num_contexts=8,
-        # ablation
-        num_giprbs=4, num_hylas=3, reduce_planes=128
+            self,
+            in_planes,
+            ou_planes,
+            steps=4,
+            token_len=24,
+            dropout=0.1,
+            num_heads=8,
+            num_contexts=8,
+            # ablation
+            num_giprbs=4, num_hylas=3, reduce_planes=128
     ):
 
         super().__init__()
@@ -374,12 +371,23 @@ class PredictiveReasoningBlock(nn.Module):
                 GIPRB(in_planes, num_contexts=num_contexts, token_len=token_len)
             )
 
-        self.sltA = SlotAttention(4, in_planes)
+        # for l in range(steps*3):
+        #     setattr(
+        #         self, "map"+str(l),
+        #         nn.Linear(token_len, token_len)
+        #     )
+        #
+        # for l in range(steps*3):
+        #     setattr(
+        #         self, "GIPRB"+str(l),
+        #         GIPRB(in_planes,num_contexts=num_contexts, token_len=token_len)
+        #     )
+        # self.sltA = SlotAttention(4, in_planes)
         self.conv = ConvNormAct(reduce_planes, reduce_planes, 3, 1)
         for l in range(self.num_hylas):
             setattr(
                 self, "norm" + str(l),
-                nn.LayerNorm((num_contexts+1, 24, reduce_planes))
+                nn.LayerNorm((num_contexts + 1, 24, reduce_planes))
             )
 
         for l in range(self.num_hylas):
@@ -395,7 +403,6 @@ class PredictiveReasoningBlock(nn.Module):
         # self.hyla2 = HYLA(128)
         # self.hyla3 = HYLA(128)
 
-
     def forward(self, x):
         b, _, _, _ = x.size()
         x = self.m(x)
@@ -404,68 +411,95 @@ class PredictiveReasoningBlock(nn.Module):
 
         outs = []
         for g, xi in enumerate(chunks):
+            outs.append(xi)
             xi = getattr(self, f"map{g}")(xi)
             xi = getattr(self, f"GIPRB{g}")(xi, g + 1)
-            outs.append(xi)
         x = torch.cat(outs, dim=1)
-
         x = self.conv(x)
-
         x = x.permute(0, 2, 3, 1)
 
         for l in range(self.num_hylas):
-            x = getattr(self, f"norm{l}")(x)
+            if l == 0 or l == 1:
+                x = getattr(self, f"norm{l}")(x)
             x = getattr(self, f"hyla{l}")(x, x)
 
         x = x.permute(0, 3, 1, 2).contiguous()
 
         # ================================================
         return x
+        ## sim
+        # return x, outs
+        # x1, x2, x3, x4 = torch.chunk(x, chunks=4, dim=1)
+        #
+        # x1 = getattr(self, "map"+str(0))(x1)
+        # x1 = getattr(self, "GIPRB"+str(0))(x1,1)
+        #
+        # x2 = getattr(self, "map"+str(1))(x2)
+        # x2 = getattr(self, "GIPRB"+str(1))(x2,2)
+        #
+        # x3 = getattr(self, "map"+str(2))(x3)
+        # x3 = getattr(self, "GIPRB"+str(2))(x3,3)
+        #
+        # x4 = getattr(self, "map"+str(3))(x4)
+        # x4 = getattr(self, "GIPRB"+str(3))(x4,4)
+        #
+        # x = torch.cat([x1, x2, x3, x4], dim=1)
+        # x = self.conv(x)
+        # x = x.permute(0,2,3,1)
+
+        # x = self.norm1(x)
+        # # x = self.cro1(x,x)
+        # x = self.hyla1(x,x)
+        # x = self.norm2(x)
+        # x = self.hyla2(x,x)
+        # x = self.norm3(x)
+        # x = self.hyla3(x,x).permute(0,3,1,2).contiguous()
 
 
 class SelfAttention(nn.Module):
     def __init__(
-        self,
-        in_planes,
-        dropout = 0.1,
-        num_heads = 8
-    ): 
+            self,
+            in_planes,
+            dropout=0.1,
+            num_heads=8
+    ):
         super().__init__()
         self.q = nn.Linear(in_planes, in_planes)
-        self.kv = nn.Linear(in_planes, in_planes*2)
-        self.num_heads=num_heads
-        self.head_dim=in_planes//num_heads
+        self.kv = nn.Linear(in_planes, in_planes * 2)
+        self.num_heads = num_heads
+        self.head_dim = in_planes // num_heads
         self.m = nn.Linear(in_planes, in_planes)
         self.drop1 = nn.Dropout(dropout)
         self.drop2 = nn.Dropout(dropout)
-    
+
     def forward(self, x):
-        b,t,l,c = x.shape
+        b, t, l, c = x.shape
         shortcut = x
         q = F.normalize(self.q(x).reshape(b, t, l, self.num_heads, self.head_dim).permute(0, 1, 3, 2, 4), dim=-1)
-        k, v = self.kv(x).reshape(b, t, l, self.num_heads*2, self.head_dim).permute(0, 1, 3, 2, 4).chunk(2, dim=2)
+        k, v = self.kv(x).reshape(b, t, l, self.num_heads * 2, self.head_dim).permute(0, 1, 3, 2, 4).chunk(2, dim=2)
         k, v = F.normalize(k, dim=-1), F.normalize(v, dim=-1)
 
         atten = self.drop1(q @ k.transpose(-2, -1))
         atten = F.softmax(atten / math.sqrt(self.head_dim), dim=-1)
         x = (atten @ v)
 
-        x = self.drop2(self.m(x.permute(0,1,3,2,4).reshape(b,t,l,c)))
+        x = self.drop2(self.m(x.permute(0, 1, 3, 2, 4).reshape(b, t, l, c)))
         return x
+
 
 class HYLA(nn.Module):
     def __init__(
-        self,
-        in_planes,
-        dropout = 0.1,
-        num_heads = 8
-    ): 
+            self,
+            in_planes,
+            dropout=0.1,
+            num_heads=8
+    ):
         super().__init__()
         self.q = nn.Linear(in_planes, in_planes)
-        self.kv = nn.Linear(in_planes, in_planes*2)
+        self.kv = nn.Linear(in_planes, in_planes * 2)
         self.gate = nn.Sequential(nn.Linear(in_planes, in_planes), nn.Sigmoid())
-        self.num_heads=num_heads
-        self.head_dim=in_planes//num_heads
+        self.num_heads = num_heads
+        self.head_dim = in_planes // num_heads
         self.m = nn.Linear(in_planes, in_planes)
         self.drop1 = nn.Dropout(dropout)
         self.drop2 = nn.Dropout(dropout)
@@ -475,76 +509,75 @@ class HYLA(nn.Module):
         self.v_init = nn.Parameter(v_init)
         self.ln = nn.LayerNorm(in_planes)
 
-
     def forward(self, q, kv):
         shortcut = q
-        b,t,l,c = q.shape
-        vp = self.v_init.expand(b,t,l,c)
-        b_,t_,l_,c_ = b,t,l,c
+        b, t, l, c = q.shape
+        vp = self.v_init.expand(b, t, l, c)
+        b_, t_, l_, c_ = b, t, l, c
 
         q = self.q(q).reshape(b, t, l, self.num_heads, self.head_dim).permute(0, 1, 3, 2, 4)
         q = F.normalize(q, dim=-1)
 
-        b,t,l,c = kv.shape
+        b, t, l, c = kv.shape
         k, v = self.kv(kv).chunk(2, dim=-1)
         k = k.reshape(b, t, l, self.num_heads, self.head_dim).permute(0, 1, 3, 2, 4)
-        v = F.relu(self.gate(v)*torch.tanh(vp)).reshape(b, t, l, self.num_heads, self.head_dim).permute(0, 1, 3, 2, 4)
+        v = F.relu(self.gate(v) * torch.tanh(vp)).reshape(b, t, l, self.num_heads, self.head_dim).permute(0, 1, 3, 2, 4)
         k, v = F.normalize(k, dim=-1), F.normalize(v, dim=-1)
 
         atten = q @ k.transpose(-2, -1)
         atten = self.drop1(F.softmax(atten / math.sqrt(self.head_dim), dim=-1))
         x = (atten @ v)
 
-        x = self.m(x.permute(0,1,3,2,4).reshape(b_,t_,l_,c_))+shortcut
+        x = self.m(x.permute(0, 1, 3, 2, 4).reshape(b_, t_, l_, c_)) + shortcut
         return x
+
 
 class CroAttention(nn.Module):
     def __init__(
-        self,
-        in_planes,
-        dropout = 0.1,
-        num_heads = 8
-    ): 
+            self,
+            in_planes,
+            dropout=0.1,
+            num_heads=8
+    ):
         super().__init__()
         self.q = nn.Linear(in_planes, in_planes)
-        self.kv = nn.Linear(in_planes, in_planes*2)
-        self.num_heads=num_heads
-        self.head_dim=in_planes//num_heads
+        self.kv = nn.Linear(in_planes, in_planes * 2)
+        self.num_heads = num_heads
+        self.head_dim = in_planes // num_heads
         self.m = nn.Linear(in_planes, in_planes)
         self.drop1 = nn.Dropout(dropout)
         self.drop2 = nn.Dropout(dropout)
 
-
     def forward(self, q, kv):
         shortcut = q
-        b,t,l,c = q.shape
-        b_,t_,l_,c_ = b,t,l,c
+        b, t, l, c = q.shape
+        b_, t_, l_, c_ = b, t, l, c
 
         q = self.q(q).reshape(b, t, l, self.num_heads, self.head_dim).permute(0, 1, 3, 2, 4)
         q = F.normalize(q, dim=-1)
 
-        b,t,l,c = kv.shape
-        k, v = self.kv(kv).reshape(b, t, l, self.num_heads*2, self.head_dim).permute(0, 1, 3, 2, 4).chunk(2, dim=2)
+        b, t, l, c = kv.shape
+        k, v = self.kv(kv).reshape(b, t, l, self.num_heads * 2, self.head_dim).permute(0, 1, 3, 2, 4).chunk(2, dim=2)
         k, v = F.normalize(k, dim=-1), F.normalize(v, dim=-1)
 
         atten = q @ k.transpose(-2, -1)
         atten = self.drop1(F.softmax(atten / math.sqrt(self.head_dim), dim=-1))
         x = (atten @ v)
 
-        x = self.drop2(self.m(x.permute(0,1,3,2,4).reshape(b_,t_,l_,c_)))+shortcut
+        x = self.drop2(self.m(x.permute(0, 1, 3, 2, 4).reshape(b_, t_, l_, c_))) + shortcut
         return x
 
 
 class Alignment(nn.Module):
 
     def __init__(
-        self,
-        in_planes,
-        ou_planes,
-        dropout = 0.1,
-        num_heads = 8,
-        ffn=True
-    ): 
+            self,
+            in_planes,
+            ou_planes,
+            dropout=0.1,
+            num_heads=8,
+            ffn=True
+    ):
         super().__init__()
         self.selfatten = SelfAttention(in_planes)
         self.downsample = ConvNormAct(in_planes, in_planes, 1, 0, activate=False)
@@ -560,31 +593,31 @@ class Alignment(nn.Module):
         self.position9 = PositionalEncoding(in_planes)
         self.ffn = ffn
         self.drop = nn.Dropout(dropout)
-    
+
     def forward(self, x, num_contexts):
-        b,c,t,l = x.shape
+        b, c, t, l = x.shape
         shortcut = self.downsample(x)
-        x = x.permute(0,2,3,1)
+        x = x.permute(0, 2, 3, 1)
 
         # if num_contexts == 3:
         #     c1, c2, c3, c4 = self.position1(x[:,0]), self.position2(x[:,1]), self.position3(x[:,2]), self.position4(x[:,3])
         #     x = torch.stack([c1, c2, c3, c4], dim=1)
         # elif num_contexts == 5:
         #     c1, c2, c3, c4, c5, c6 = self.position1(x[:,0]), self.position2(x[:,1]), self.position3(x[:,2]), self.position4(x[:,3]), self.position1(x[:,4]), self.position2(x[:,5])
-        #     x = torch.stack([c1, c2, c3, c4, c5, c6], dim=1)    
+        #     x = torch.stack([c1, c2, c3, c4, c5, c6], dim=1)
         # elif num_contexts == 8:
         #     c1, c2, c3, c4, c5, c6, c7, c8, c9 = self.position1(x[:,0]), self.position2(x[:,1]), self.position3(x[:,2]), self.position4(x[:,3]), self.position1(x[:,4]), self.position2(x[:,5]), self.position3(x[:,6]), self.position4(x[:,7]), self.position4(x[:,8])
         #     x = torch.stack([c1, c2, c3, c4, c5, c6, c7, c8, c9], dim=1)
-        x = self.selfatten(x).permute(0,3,1,2)
-        out = self.drop(x)+shortcut
+        x = self.selfatten(x).permute(0, 3, 1, 2)
+        out = self.drop(x) + shortcut
         if self.ffn:
-            out = self.m(out.permute(0,2,3,1)).permute(0,3,1,2)
+            out = self.m(out.permute(0, 2, 3, 1)).permute(0, 3, 1, 2)
         return out
 
 
 class PredRNet(nn.Module):
 
-    def __init__(self, num_filters=48, block_drop=0.0, classifier_drop=0.0, 
+    def __init__(self, num_filters=48, block_drop=0.0, classifier_drop=0.0,
                  classifier_hidreduce=1.0, in_channels=1, num_classes=8,
                  num_extra_stages=1, reasoning_block=PredictiveReasoningBlock,
                  num_contexts=8,
@@ -592,22 +625,44 @@ class PredRNet(nn.Module):
 
         super().__init__()
 
-        channels = [num_filters, num_filters*2, num_filters*3, num_filters*4]
+        channels = [num_filters, num_filters * 2, num_filters * 3, num_filters * 4]
         strides = [2, 2, 2, 2]
 
         # -------------------------------------------------------------------
-        # frame encoder 
+        # frame encoder
 
-        self.in_planes = in_channels
+        # --- 3. 引入 HCVARR 的感知模块 (HCV Perception) ---
+        # CNN部分
+        self.perception_net_high = nn.Sequential(
+            nn.Conv2d(1, 32, kernel_size=7, stride=2, padding=3, bias=False),  # high_dim0 = 32
+            nn.BatchNorm2d(32),
+            nn.ReLU(inplace=True),
+            nn.Dropout2d(0.1),
+            nn.Conv2d(32, 64, kernel_size=3, stride=2, padding=1, bias=False),  # high_dim = 64
+            nn.BatchNorm2d(64),
+            nn.ReLU(inplace=True))
 
-        for l in range(len(strides)):
-            setattr(
-                self, "res"+str(l), 
-                self._make_layer(
-                    channels[l], stride=strides[l], 
-                    block=ResBlock, dropout=block_drop,
-                )
-            )
+        self.perception_net_mid = nn.Sequential(
+            nn.Conv2d(64, 64, kernel_size=3, stride=2, padding=1, bias=False),  # mid_dim0 = 64
+            nn.BatchNorm2d(64),
+            nn.ReLU(inplace=True),
+            nn.Dropout2d(0.1),
+            nn.Conv2d(64, 128, kernel_size=3, stride=1, padding=1, bias=False),  # mid_dim = 128
+            nn.BatchNorm2d(128),
+            nn.ReLU(inplace=True))
+
+        self.perception_net_low = nn.Sequential(
+            nn.Conv2d(128, 128, kernel_size=3, stride=2, padding=1, bias=False),  # low_dim0 = 128
+            nn.BatchNorm2d(128),
+            nn.ReLU(inplace=True),
+            nn.Dropout2d(0.1),
+            nn.Conv2d(128, 256, kernel_size=3, stride=1, padding=1, bias=False),  # low_dim = 256
+            nn.BatchNorm2d(256),
+            nn.ReLU(inplace=True))
+
+        # Swin Transformer部分
+        self.swinT = swinB()  # swinB() 需要被正确定义和导入
+        self.hcv_adapter = nn.Conv2d(256, 128, kernel_size=1, stride=1, bias=False)
         # -------------------------------------------------------------------
         reduced_channel = 32
         self.position1 = LearnedAdditivePositionalEmbed(128)
@@ -619,12 +674,11 @@ class PredRNet(nn.Module):
         self.position7 = LearnedAdditivePositionalEmbed(128)
         self.position8 = LearnedAdditivePositionalEmbed(128)
         self.position9 = LearnedAdditivePositionalEmbed(128)
-        
 
         # -------------------------------------------------------------------
-        # predictive coding 
+        # predictive coding
         self.num_contexts = num_contexts
-        self.atten = Alignment(128,512)
+        self.atten = Alignment(128, 512)
         self.think_branches = 1
         self.reduce_planes = reduce_planes
         self.channel_reducer = ConvNormAct(128, reduce_planes, 1, 0, activate=False)
@@ -633,36 +687,36 @@ class PredRNet(nn.Module):
 
         for l in range(self.think_branches):
             setattr(
-                self, "MAutoRR"+str(l), 
+                self, "MAutoRR" + str(l),
                 PredictiveReasoningBlock(32, 32, num_heads=8, num_contexts=self.num_contexts,
-                                         num_giprbs=self.num_giprbs, num_hylas=self.num_hylas, reduce_planes=self.reduce_planes)
+                                         num_giprbs=self.num_giprbs, num_hylas=self.num_hylas,
+                                         reduce_planes=self.reduce_planes)
             )
         # -------------------------------------------------------------------
 
         self.featr_dims = 1024
 
         self.classifier = Classifier(
-            self.featr_dims, 1, 
-            norm_layer = nn.BatchNorm1d, 
-            dropout = classifier_drop, 
-            hidreduce = classifier_hidreduce
+            self.featr_dims, 1,
+            norm_layer=nn.BatchNorm1d,
+            dropout=classifier_drop,
+            hidreduce=classifier_hidreduce
         )
 
         self.in_channels = in_channels
         self.ou_channels = num_classes
 
-
     def _make_layer(self, planes, stride, dropout, block, downsample=True):
         if downsample and block == ResBlock:
             downsample = nn.Sequential(
-                nn.AvgPool2d(kernel_size = 2, stride = stride) if stride != 1 else nn.Identity(),
-                ConvNormAct(self.in_planes, planes, 1, 0, activate = False, stride=1),
+                nn.AvgPool2d(kernel_size=2, stride=stride) if stride != 1 else nn.Identity(),
+                ConvNormAct(self.in_planes, planes, 1, 0, activate=False, stride=1),
             )
         else:
             downsample = nn.Identity()
 
         if block == ResBlock:
-            stage = block(self.in_planes, planes, downsample, stride = stride, dropout = dropout)
+            stage = block(self.in_planes, planes, downsample, stride=stride, dropout=dropout)
 
         self.in_planes = planes
 
@@ -671,15 +725,25 @@ class PredRNet(nn.Module):
     def forward(self, x, train=False):
         if self.in_channels == 1:
             b, n, h, w = x.size()
-            x = x.reshape(b*n, 1, h, w)
+            x = x.reshape(b * n, 1, h, w)
         elif self.in_channels == 3:
             b, n, _, h, w = x.size()
-            x = x.reshape(b*n, 3, h, w)
+            x = x.reshape(b * n, 3, h, w)
 
-        for l in range(4):
-            x = getattr(self, "res"+str(l))(x)
+        ### Perception Branch
+        input_features_high = self.perception_net_high(x.view(-1, 80, 80).unsqueeze(1))
+        input_features_mid = self.perception_net_mid(input_features_high)
+        input_features_low = self.perception_net_low(input_features_mid)
+        # ((32*16),64,20,20), ((32*16),128,5,5), ((32*16),256,1,1)
 
+        transformer_features = self.swinT(x)
 
+        input_features_high = input_features_high + transformer_features[0].view(-1, 64, 20, 20)  # (32*16,64,20,20)
+        input_features_mid = input_features_mid + transformer_features[1].view(-1, 128, 10, 10)  # (32*16,128,10,10)
+        input_features_low = input_features_low + transformer_features[2].view(-1, 256, 5, 5)  # (32*16,256,5,5)
+        x = self.hcv_adapter(input_features_low)
+
+        ###
         if self.num_contexts == 8:
             _, c, h, w = x.size()
             x = convert_to_rpm_matrix_v9(x, b, h, w)
@@ -690,19 +754,18 @@ class PredRNet(nn.Module):
             _, c, h, w = x.size()
             x = convert_to_rpm_matrix_v6(x, b, h, w)
 
-
-        x = x.reshape(b * self.ou_channels, self.num_contexts + 1, -1, h*w)
-        x = x.permute(0,2,1,3)
+        x = x.reshape(b * self.ou_channels, self.num_contexts + 1, -1, h * w)
+        x = x.permute(0, 2, 1, 3)
 
         x = self.channel_reducer(x)
-        # x = x.permute(0,2,3,1)
-        # if self.num_contexts == 3:
-        #     c1, c2, c3, c4 = self.position1(x[:,0]), self.position2(x[:,1]), self.position3(x[:,2]), self.position4(x[:,3])
-        #     x = torch.stack([c1, c2, c3, c4], dim=1)
-        # elif self.num_contexts == 8:
-        #     c1, c2, c3, c4, c5, c6, c7, c8, c9 = self.position1(x[:,0]), self.position2(x[:,1]), self.position3(x[:,2]), self.position4(x[:,3]), self.position1(x[:,4]), self.position2(x[:,5]), self.position3(x[:,6]), self.position4(x[:,7]), self.position4(x[:,8])
-        #     x = torch.stack([c1, c2, c3, c4, c5, c6, c7, c8, c9], dim=1)
-        # x = x.permute(0, 3, 1, 2)
+        x = x.permute(0,2,3,1)
+        if self.num_contexts == 3:
+            c1, c2, c3, c4 = self.position1(x[:,0]), self.position2(x[:,1]), self.position3(x[:,2]), self.position4(x[:,3])
+            x = torch.stack([c1, c2, c3, c4], dim=1)
+        elif self.num_contexts == 8:
+            c1, c2, c3, c4, c5, c6, c7, c8, c9 = self.position1(x[:,0]), self.position2(x[:,1]), self.position3(x[:,2]), self.position4(x[:,3]), self.position1(x[:,4]), self.position2(x[:,5]), self.position3(x[:,6]), self.position4(x[:,7]), self.position4(x[:,8])
+            x = torch.stack([c1, c2, c3, c4, c5, c6, c7, c8, c9], dim=1)
+        x = x.permute(0, 3, 1, 2)
 
         # # sim
         # x, xis = getattr(self, "MAutoRR"+str(0))(x)
@@ -716,43 +779,52 @@ class PredRNet(nn.Module):
 
         out = self.classifier(x)
 
-        return out.view(b, self.ou_channels)#, xis
-    
+        return out.view(b, self.ou_channels)  # , xis
 
-def predrnet_raven(**kwargs):
+
+def predrnet_raven_hcv(**kwargs):
     return PredRNet(**kwargs, num_contexts=8)
+
 
 def predrnet_analogy(**kwargs):
     return PredRNet(**kwargs, num_contexts=5, num_classes=4)
 
-def predrnet_mnr(**kwargs):
+
+def predrnet_mnr_hcv(**kwargs):
     return PredRNet(**kwargs, num_contexts=3)
+
 
 def hcvarr(**kwargs):
     return HCVARR(**kwargs, num_contexts=5, num_classes=4)
 
+
 def scar(**kwargs):
     return RelationNetworkSCAR(**kwargs, num_contexts=5, num_classes=4)
+
 
 def pred(**kwargs):
     return Pred(**kwargs, num_contexts=5, num_classes=4)
 
+
 def mm(**kwargs):
     return MM(**kwargs, num_contexts=5, num_classes=4)
 
+
 def mrnet(**kwargs):
     return MRNet(**kwargs, num_contexts=5, num_classes=4)
-def mrnet_pric_raven(**kwargs):
-    return MRNet(**kwargs, num_contexts=8, num_classes=4)
+
 
 def mrnet_price_analogy(**kwargs):
     return MRNet_PRIC(**kwargs, num_contexts=5, num_classes=4)
 
+
 def mrnet_pric_raven(**kwargs):
     return MRNet_PRIC(**kwargs, num_contexts=8)
 
+
 def hcv_pric_analogy(**kwargs):
     return HCV_PRIC(**kwargs, num_contexts=5, num_classes=4)
+
 
 def hcv_pric_raven(**kwargs):
     return HCV_PRIC(**kwargs, num_contexts=8)

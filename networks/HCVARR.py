@@ -251,7 +251,7 @@ class WindowAttention(nn.Module):
         # get pair-wise relative position index for each token inside the window
         coords_h = torch.arange(self.window_size[0])
         coords_w = torch.arange(self.window_size[1])
-        coords = torch.stack(torch.meshgrid([coords_h, coords_w]))  # [2, Mh, Mw]
+        coords = torch.stack(torch.meshgrid([coords_h, coords_w], indexing='ij'))  # [2, Mh, Mw]
         coords_flatten = torch.flatten(coords, 1)  # [2, Mh*Mw]
         # [2, Mh*Mw, 1] - [2, 1, Mh*Mw]
         relative_coords = coords_flatten[:, :, None] - coords_flatten[:, None, :]  # [2, Mh*Mw, Mh*Mw]
@@ -634,13 +634,14 @@ class element_wise_attention(nn.Module):
             if isinstance(m, nn.Linear):
                 nn.init.normal_(m.weight, 0, 0.01)
                 nn.init.constant_(m.bias, 0)
-    
+
     def forward(self, x1, x2):
+        q = self.q.to(x1.device)
         stream1, stream2 = x1, x2
-        d1 = self.q * x1
+        d1 = q * x1
         d1 = d1.unsqueeze(0)
 
-        d2 = self.q * x2
+        d2 = q * x2
         d2 = d2.unsqueeze(0)
 
         ds = torch.cat((d1, d2), 0)
@@ -655,12 +656,12 @@ class element_wise_attention(nn.Module):
         result = stream1 + stream2
 
         return result
-        
+
 class HCVARR(nn.Module):
-    def __init__(self, num_filters=48, block_drop=0.0, classifier_drop=0.0, 
-                 classifier_hidreduce=1.0, in_channels=1, num_classes=4, 
+    def __init__(self, num_filters=48, block_drop=0.0, classifier_drop=0.0,
+                 classifier_hidreduce=1.0, in_channels=1, num_classes=4,
                  num_extra_stages=1, reasoning_block=None,
-                 num_contexts=5, row_col=True, dropout=True, do_contrast=False, levels='111'):
+                 num_contexts=5, row_col=True, dropout=True, do_contrast=False, levels='111',reduce_planes=128, num_hylas=3):
         super(HCVARR, self).__init__()
         self.do_contrast = do_contrast
         self.levels = levels
@@ -793,15 +794,15 @@ class HCVARR(nn.Module):
                     if m.bias is not None:
                         nn.init.constant_(m.bias, 0)
 
-        self.F_func_high = nn.Sequential(nn.Conv2d(64*3,64,1), 
+        self.F_func_high = nn.Sequential(nn.Conv2d(64*3,64,1),
                                     nn.ReLU(inplace=True))
-        self.F_func_mid = nn.Sequential(nn.Conv2d(128*3,128,1), 
+        self.F_func_mid = nn.Sequential(nn.Conv2d(128*3,128,1),
                                     nn.ReLU(inplace=True))
-        self.F_func_low = nn.Sequential(nn.Conv2d(256*3,256,1), 
+        self.F_func_low = nn.Sequential(nn.Conv2d(256*3,256,1),
                                     nn.ReLU(inplace=True))
 
         self.swinT = swinB()
-        
+
     def triples(self, input_features):
         N, K, C, H, W = input_features.shape
         K0 = K - 8
@@ -827,7 +828,7 @@ class HCVARR(nn.Module):
         # x = 1 - (dist12 + dist23 + dist31)
 
         B, _, C, H, W = x1.shape
-        
+
         fusion = element_wise_attention((B, C, H, W))
         # fusion = torch.nn.DataParallel(fusion)
         fusion = fusion.cuda()
@@ -835,7 +836,7 @@ class HCVARR(nn.Module):
         x_23 = fusion(x2.reshape(-1,C,H,W), x3.reshape(-1,C,H,W))
         x_13 = fusion(x1.reshape(-1,C,H,W), x3.reshape(-1,C,H,W))
 
-        
+
         x_cat = torch.cat((x_12,x_23,x_13),dim=1)
 
         B, C, H, W = x_cat.shape
@@ -895,95 +896,95 @@ class HCVARR(nn.Module):
         # input_features_mid = s_x[1].view(-1, 128,10,10) #(32*16,128,10,10)
         # input_features_low = s_x[2].view(-1, 256,5,5) #(32*16,256,5,5)
 
-        
-        # ### Relation Module
-        # # High res
-        # if self.levels[0] == '1':
-        #     row1_cat_high, row2_cat_high, row3_cat_high, col1_cat_high, col2_cat_high, col3_cat_high = \
-        #         self.triples(input_features_high.view(N, K, self.high_dim, 20, 20))
 
-        #     row_feats_high = self.g_function_high(torch.cat((row1_cat_high, row2_cat_high, row3_cat_high), dim=0))
-        #     row_feats_high = self.bn_row_high(self.conv_row_high(row_feats_high))
-        #     col_feats_high = self.g_function_high(torch.cat((col1_cat_high, col2_cat_high, col3_cat_high), dim=0))
-        #     col_feats_high = self.bn_col_high(self.conv_col_high(col_feats_high))
+        ### Relation Module
+        # High res
+        if self.levels[0] == '1':
+            row1_cat_high, row2_cat_high, row3_cat_high, col1_cat_high, col2_cat_high, col3_cat_high = \
+                self.triples(input_features_high.view(N, K, self.high_dim, 20, 20))
 
-        #     reduced_feats_high = self.reduce(row_feats_high, col_feats_high, N, K0)  # N, 8, 64, 20, 20
+            row_feats_high = self.g_function_high(torch.cat((row1_cat_high, row2_cat_high, row3_cat_high), dim=0))
+            row_feats_high = self.bn_row_high(self.conv_row_high(row_feats_high))
+            col_feats_high = self.g_function_high(torch.cat((col1_cat_high, col2_cat_high, col3_cat_high), dim=0))
+            col_feats_high = self.bn_col_high(self.conv_col_high(col_feats_high))
 
-        # # Mid res
-        # if self.levels[1] == '1':
-        #     row1_cat_mid, row2_cat_mid, row3_cat_mid, col1_cat_mid, col2_cat_mid, col3_cat_mid = \
-        #         self.triples(input_features_mid.view(N, K, self.mid_dim, 10, 10))
+            reduced_feats_high = self.reduce(row_feats_high, col_feats_high, N, K0)  # N, 8, 64, 20, 20
 
-        #     row_feats_mid = self.g_function_mid(torch.cat((row1_cat_mid, row2_cat_mid, row3_cat_mid), dim=0))
-        #     row_feats_mid = self.bn_row_mid(self.conv_row_mid(row_feats_mid))
-        #     col_feats_mid = self.g_function_mid(torch.cat((col1_cat_mid, col2_cat_mid, col3_cat_mid), dim=0))
-        #     col_feats_mid = self.bn_col_mid(self.conv_col_mid(col_feats_mid))
+        # Mid res
+        if self.levels[1] == '1':
+            row1_cat_mid, row2_cat_mid, row3_cat_mid, col1_cat_mid, col2_cat_mid, col3_cat_mid = \
+                self.triples(input_features_mid.view(N, K, self.mid_dim, 10, 10))
 
-        #     reduced_feats_mid = self.reduce(row_feats_mid, col_feats_mid, N, K0)  # N, 8, 256, 5, 5
-        # # Low res
-        # if self.levels[2] == '1':
-        #     row1_cat_low, row2_cat_low, row3_cat_low, col1_cat_low, col2_cat_low, col3_cat_low = \
-        #         self.triples(input_features_low.view(N, K, self.low_dim, 5, 5))
+            row_feats_mid = self.g_function_mid(torch.cat((row1_cat_mid, row2_cat_mid, row3_cat_mid), dim=0))
+            row_feats_mid = self.bn_row_mid(self.conv_row_mid(row_feats_mid))
+            col_feats_mid = self.g_function_mid(torch.cat((col1_cat_mid, col2_cat_mid, col3_cat_mid), dim=0))
+            col_feats_mid = self.bn_col_mid(self.conv_col_mid(col_feats_mid))
 
-        #     row_feats_low = self.g_function_low(torch.cat((row1_cat_low, row2_cat_low, row3_cat_low), dim=0))
-        #     row_feats_low = self.bn_row_low(self.conv_row_low(row_feats_low))
-        #     col_feats_low = self.g_function_low(torch.cat((col1_cat_low, col2_cat_low, col3_cat_low), dim=0))
-        #     col_feats_low = self.bn_col_low(self.conv_col_low(col_feats_low))
+            reduced_feats_mid = self.reduce(row_feats_mid, col_feats_mid, N, K0)  # N, 8, 256, 5, 5
+        # Low res
+        if self.levels[2] == '1':
+            row1_cat_low, row2_cat_low, row3_cat_low, col1_cat_low, col2_cat_low, col3_cat_low = \
+                self.triples(input_features_low.view(N, K, self.low_dim, 5, 5))
 
-        #     reduced_feats_low = self.reduce(row_feats_low, col_feats_low, N, K0)  # N, 8, 256, 5, 5
+            row_feats_low = self.g_function_low(torch.cat((row1_cat_low, row2_cat_low, row3_cat_low), dim=0))
+            row_feats_low = self.bn_row_low(self.conv_row_low(row_feats_low))
+            col_feats_low = self.g_function_low(torch.cat((col1_cat_low, col2_cat_low, col3_cat_low), dim=0))
+            col_feats_low = self.bn_col_low(self.conv_col_low(col_feats_low))
 
-        # ### Combine
-        # self.final_high = self.final_mid = self.final_low = None
-        # final = []
-        # # High
-        # if self.levels[0] == '1':
-        #     res1_in_high = reduced_feats_high
-        #     if self.do_contrast:
-        #         res1_in_high = res1_in_high - res1_in_high.mean(dim=1).unsqueeze(1)
-        #     res1_out_high = self.res1_high(res1_in_high.view(N * K0, self.high_dim, 20, 20))
-        #     res2_in_high = res1_out_high.view(N, K0, 2 * self.high_dim, 10, 10)
-        #     if self.do_contrast:
-        #         res2_in_high = res2_in_high - res2_in_high.mean(dim=1).unsqueeze(1)
-        #     out_high = self.res2_high(res2_in_high.view(N * K0, 2 * self.high_dim, 10, 10))
-        #     final_high = self.avgpool(out_high)
-        #     final_high = final_high.view(-1, self.mlp_dim_high)
-        #     final.append(final_high)
-        #     self.final_high = final_high
+            reduced_feats_low = self.reduce(row_feats_low, col_feats_low, N, K0)  # N, 8, 256, 5, 5
 
-        # # Mid
-        # if self.levels[1] == '1':
-        #     res1_in_mid = reduced_feats_mid
-        #     if self.do_contrast:
-        #         res1_in_mid = res1_in_mid - res1_in_mid.mean(dim=1).unsqueeze(1)
-        #     res1_out_mid = self.res1_mid(res1_in_mid.view(N * K0, self.mid_dim, 10, 10))
-        #     res2_in_mid = res1_out_mid.view(N, K0, 2 * self.mid_dim, 5, 5)
-        #     if self.do_contrast:
-        #         res2_in_mid = res2_in_mid - res2_in_mid.mean(dim=1).unsqueeze(1)
-        #     out_mid = self.res2_mid(res2_in_mid.view(N * K0, 2 * self.mid_dim, 5, 5))
-        #     final_mid = self.avgpool(out_mid)
-        #     final_mid = final_mid.view(-1, self.mlp_dim_mid)
-        #     final.append(final_mid)
-        #     self.final_mid = final_mid
+        ### Combine
+        self.final_high = self.final_mid = self.final_low = None
+        final = []
+        # High
+        if self.levels[0] == '1':
+            res1_in_high = reduced_feats_high
+            if self.do_contrast:
+                res1_in_high = res1_in_high - res1_in_high.mean(dim=1).unsqueeze(1)
+            res1_out_high = self.res1_high(res1_in_high.view(N * K0, self.high_dim, 20, 20))
+            res2_in_high = res1_out_high.view(N, K0, 2 * self.high_dim, 10, 10)
+            if self.do_contrast:
+                res2_in_high = res2_in_high - res2_in_high.mean(dim=1).unsqueeze(1)
+            out_high = self.res2_high(res2_in_high.view(N * K0, 2 * self.high_dim, 10, 10))
+            final_high = self.avgpool(out_high)
+            final_high = final_high.view(-1, self.mlp_dim_high)
+            final.append(final_high)
+            self.final_high = final_high
 
-        # # Low
-        # if self.levels[2] == '1':
-        #     res1_in_low = reduced_feats_low
-        #     if self.do_contrast:
-        #         res1_in_low = res1_in_low - res1_in_low.mean(dim=1).unsqueeze(1)
-        #     res1_out_low = self.res1_low(res1_in_low.view(N * K0, self.low_dim, 5, 5))
-        #     res2_in_low = res1_out_low.view(N, K0, self.mlp_dim_low, 5, 5)
-        #     if self.do_contrast:
-        #         res2_in_low = res2_in_low - res2_in_low.mean(dim=1).unsqueeze(1)
-        #     out_low = self.res2_low(res2_in_low.view(N * K0, self.mlp_dim_low, 5, 5))
-        #     final_low = self.avgpool(out_low)
-        #     final_low = final_low.view(-1, self.mlp_dim_low)
-        #     final.append(final_low)
-        #     self.final_low = final_low
+        # Mid
+        if self.levels[1] == '1':
+            res1_in_mid = reduced_feats_mid
+            if self.do_contrast:
+                res1_in_mid = res1_in_mid - res1_in_mid.mean(dim=1).unsqueeze(1)
+            res1_out_mid = self.res1_mid(res1_in_mid.view(N * K0, self.mid_dim, 10, 10))
+            res2_in_mid = res1_out_mid.view(N, K0, 2 * self.mid_dim, 5, 5)
+            if self.do_contrast:
+                res2_in_mid = res2_in_mid - res2_in_mid.mean(dim=1).unsqueeze(1)
+            out_mid = self.res2_mid(res2_in_mid.view(N * K0, 2 * self.mid_dim, 5, 5))
+            final_mid = self.avgpool(out_mid)
+            final_mid = final_mid.view(-1, self.mlp_dim_mid)
+            final.append(final_mid)
+            self.final_mid = final_mid
 
-        # final = torch.cat(final, dim=1) # 32,8,128
+        # Low
+        if self.levels[2] == '1':
+            res1_in_low = reduced_feats_low
+            if self.do_contrast:
+                res1_in_low = res1_in_low - res1_in_low.mean(dim=1).unsqueeze(1)
+            res1_out_low = self.res1_low(res1_in_low.view(N * K0, self.low_dim, 5, 5))
+            res2_in_low = res1_out_low.view(N, K0, self.mlp_dim_low, 5, 5)
+            if self.do_contrast:
+                res2_in_low = res2_in_low - res2_in_low.mean(dim=1).unsqueeze(1)
+            out_low = self.res2_low(res2_in_low.view(N * K0, self.mlp_dim_low, 5, 5))
+            final_low = self.avgpool(out_low)
+            final_low = final_low.view(-1, self.mlp_dim_low)
+            final.append(final_low)
+            self.final_low = final_low
 
-        # # MLP
-        # out = self.mlp(final)
-        # errors = torch.zeros([1,10]).cuda()
-        # return out.view(-1, K0), errors
-        return input_features_low, input_features_low 
+        final = torch.cat(final, dim=1) # 32,8,128
+
+        # MLP
+        out = self.mlp(final)
+        errors = torch.zeros([1,10]).cuda()
+        return out.view(-1, K0)#, errors
+        return input_features_low, input_features_low

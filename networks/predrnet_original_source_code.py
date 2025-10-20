@@ -12,7 +12,7 @@ from .network_utils import (
 )
 
 
-class PredictiveReasoningBlock(nn.Module):
+class original_PredictiveReasoningBlock(nn.Module):
 
     def __init__(
         self, 
@@ -29,7 +29,14 @@ class PredictiveReasoningBlock(nn.Module):
         self.stride = stride
 
         md_planes = ou_planes*4
+
         self.pconv = ConvNormAct(in_planes, in_planes, (num_contexts, 1))
+        self.mlp = nn.Sequential(
+            nn.Linear(num_contexts, num_contexts*2),
+            nn.GELU(),
+            nn.Linear(num_contexts*2, 1)
+        )
+
         self.conv1 = ConvNormAct(in_planes, md_planes, 3, 1)
         self.conv2 = ConvNormAct(md_planes, ou_planes, 3, 1)
         self.drop = nn.Dropout(dropout) if dropout > .0 else nn.Identity()
@@ -40,7 +47,10 @@ class PredictiveReasoningBlock(nn.Module):
         
         b, c, t, l = x.size()
         contexts, choices = x[:,:,:t-1], x[:,:,t-1:]
-        predictions = self.pconv(contexts)
+
+        # predictions = self.pconv(contexts)
+        predictions = self.mlp(contexts.permute(0, 1, 3, 2).contiguous().view(b * c * l, t - 1)).view(b, c, l, 1).permute(0, 1, 3, 2)
+
         prediction_errors = F.relu(choices) - predictions
         
         out = torch.cat((contexts, prediction_errors), dim=2)
@@ -50,13 +60,13 @@ class PredictiveReasoningBlock(nn.Module):
         identity = self.downsample(x)
         out = out + identity
         
-        return out
+        return out, prediction_errors
 
 class PredRNet(nn.Module):
 
     def __init__(self, num_filters=32, block_drop=0.0, classifier_drop=0.0, 
                  classifier_hidreduce=1.0, in_channels=1, num_classes=8, 
-                 num_extra_stages=1, reasoning_block=PredictiveReasoningBlock,
+                 num_extra_stages=1, reasoning_block=original_PredictiveReasoningBlock,
                  num_contexts=8):
 
         super().__init__()
@@ -120,12 +130,12 @@ class PredRNet(nn.Module):
                 nn.AvgPool2d(kernel_size = 2, stride = stride) if stride != 1 else nn.Identity(),
                 ConvNormAct(self.in_planes, planes, 1, 0, activate = False, stride=1),
             )
-        elif downsample and (block == PredictiveReasoningBlock or type(block) == partial):
+        elif downsample and (block == original_PredictiveReasoningBlock or type(block) == partial):
             downsample = ConvNormAct(self.in_planes, planes, 1, 0, activate = False)
         else:
             downsample = nn.Identity()
 
-        if block == PredictiveReasoningBlock or type(block) == partial:
+        if block == original_PredictiveReasoningBlock or type(block) == partial:
             stage = block(self.in_planes, planes, downsample, stride = stride, 
                           dropout = dropout, num_contexts = self.num_contexts)
         elif block == ResBlock:
@@ -155,13 +165,20 @@ class PredRNet(nn.Module):
             x = convert_to_rpm_matrix_v9(x, b, h, w)
         else:
             x = convert_to_rpm_matrix_v6(x, b, h, w)
+
         
         x = x.reshape(b * self.ou_channels, self.num_contexts + 1, -1, h * w)
         # e.g. [b,9,c,l] -> [b,c,9,l] (l=h*w)
         x = x.permute(0,2,1,3)
 
-        for l in range(0, self.num_extra_stages): 
-            x = getattr(self, "prb"+str(l))(x)
+        # errors
+        all_prediction_errors = []
+        for l in range(0, self.num_extra_stages):
+            x, prediction_errors = getattr(self, "prb" + str(l))(x)
+            all_prediction_errors.append(prediction_errors)
+
+        # for l in range(0, self.num_extra_stages):
+        #     x = getattr(self, "prb"+str(l))(x)
   
         x = x.reshape(b, self.ou_channels, -1)
         x = F.adaptive_avg_pool1d(x, self.featr_dims)    
@@ -169,7 +186,7 @@ class PredRNet(nn.Module):
 
         out = self.classifier(x)
 
-        return out.view(b, self.ou_channels), _
+        return out.view(b, self.ou_channels), all_prediction_errors
     
 
 def predrnet_original_raven(**kwargs):

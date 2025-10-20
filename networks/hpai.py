@@ -397,7 +397,7 @@ class HPAI(nn.Module):
         out = self.classifier(final)
 
         # return out.view(b, self.ou_channels)
-        return out.view(b, self.ou_channels), _
+        return out.view(b, self.ou_channels)#, _
         # return out.view(b, self.ou_channels), err_total.tolist()
         # return final
     

@@ -52,6 +52,33 @@ class LearnedAdditivePositionalEmbed(nn.Module):
         T = input.shape[1]
         return self.dropout(input + self.pe[:, :T])
 
+class LearnedAdditivePositionalEmbed_slot(nn.Module):
+    """
+    (修正后的实现)
+    一个标准的可学习的二维位置编码模块。
+    它创建一个与输入特征图空间维度相同的、可学习的参数`pe`，并将其直接加到输入上。
+    """
+
+    def __init__(self, dim, spatial_dims):
+        super().__init__()
+        # spatial_dims 是一个元组，例如 (height, width)
+        if isinstance(spatial_dims, int):
+            spatial_dims = (spatial_dims, spatial_dims)
+
+        # 创建一个形状为 (1, channel_dim, height, width) 的可学习参数
+        self.pe = nn.Parameter(torch.zeros(1, dim, *spatial_dims))
+        # 使用标准正态分布进行初始化
+        nn.init.normal_(self.pe, std=0.02)
+
+    def forward(self, x):
+        # x 的形状是 (batch, channel_dim, height, width)
+        # self.pe 会通过广播机制自动扩展到 batch 维度，然后与 x 相加
+        if x.shape[2:] != self.pe.shape[2:]:
+            raise ValueError(
+                f"Input spatial dimensions {x.shape[2:]} do not match "
+                f"positional embedding dimensions {self.pe.shape[2:]}"
+            )
+        return x + self.pe
 
 class DummyPositionEmbed(nn.Module):
     """Embedding that just passes through inputs without adding any positional embeddings."""

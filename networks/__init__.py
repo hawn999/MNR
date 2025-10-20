@@ -1,16 +1,32 @@
 from .resnet4b import resnet4b
-from .predrnet_v3 import predrnet_raven, predrnet_analogy, predrnet_mnr, hcvarr, scar, pred, mm, mrnet
-# from .predrnet import predrnet_raven, predrnet_analogy, predrnet_mnr, hcvarr, scar, pred, mm, mrnet, \
-    # mrnet_price_analogy, mrnet_pric_raven, hcv_pric_analogy, hcv_pric_raven
+from .predrnet_sraven import predrnet_sraven
+
+from .predrnet_v3 import predrnet_raven, predrnet_analogy, predrnet_mnr, hcvarr, scar, pred, mm, mrnet,mrnet_pric_raven
 from .HCVARR_RPV import hcvarr_rpv
 from .hpai import hpai_raven
 from .hpai_pric import hpai_pric_raven, hpai_pric_analogy
 from .predrnet_original_source_code import predrnet_original_raven
 from .hcv_pric_v2 import hcv_pric_v2_analogy
+# from .hcv_peric import predrnet_raven_hcv,predrnet_mnr_hcv
 from .DARR import darr_raven, darr_analogy
+from .DARR_sraven import darr_raven_sraven
+from .HCVARR import HCVARR
+from .cot_predrnet import predrnet_raven_cot
+from .cot_v3 import cot_v3
+
+# graph
+from .slot import predrnet_mnr_graph,predrnet_raven_graph, cot_slot
+from .slot_sraven import predrnet_sraven_graph
+
+# from .test import predrnet_mnr_test
+# from .casual_predrnet import causal_predrnet_mnr
+
 
 model_dict = {
     "resnet4b": resnet4b,
+    # "predrnet_raven": predrnet_raven_hcv,
+    "predrnet_raven_graph": predrnet_raven_graph,
+    "predrnet_sraven_graph": predrnet_sraven_graph,
     "predrnet_raven": predrnet_raven,
     "predrnet_analogy": predrnet_analogy,
     "hcvarr": hcvarr,
@@ -18,19 +34,29 @@ model_dict = {
     "pred": pred,
     "mm": mm,
     "mrnet": mrnet,
-    "predrnet_mnr": predrnet_mnr,
+    # "predrnet_mnr": predrnet_mnr_hcv,
+    "predrnet_mnr": predrnet_mnr_graph,
+    "hcv":HCVARR,
+    "predrnet_mnr_graph":predrnet_mnr_graph,
+    "predrnet_mnr":predrnet_mnr,
+
     # "mrnet_pric_analogy": mrnet_price_analogy,
-    # "mrnet_pric_raven": mrnet_pric_raven,
+    "mrnet_pric_raven": mrnet_pric_raven,
     # "hcv_pric_analogy": hcv_pric_analogy,
     # "hcv_pric_raven": hcv_pric_raven,
-    # "hcvarr_rpv": hcvarr_rpv,
-    # "hpai_raven": hpai_raven,
-    # "hpai_pric_raven": hpai_pric_raven,
-    # "hpai_pric_analogy": hpai_pric_analogy,
-    # "predrnet_original_raven": predrnet_original_raven,
-    # "hcv_pric_v2_analogy": hcv_pric_v2_analogy,
-    # "darr_raven": darr_raven,
-    # "darr_analogy": darr_analogy,
+    "hcvarr_rpv": hcvarr_rpv,
+    "hpai_raven": hpai_raven,
+    "hpai_pric_raven": hpai_pric_raven,
+    "hpai_pric_analogy": hpai_pric_analogy,
+    "predrnet_original_raven": predrnet_original_raven,
+    "hcv_pric_v2_analogy": hcv_pric_v2_analogy,
+    "darr_raven": darr_raven,
+    "darr_sraven":darr_raven_sraven,
+    "darr_analogy": darr_analogy,
+
+    "cot_prb":predrnet_raven_cot,
+    "cot_v3": cot_v3,
+    "cot_slot": cot_slot
 }
 
 
@@ -45,6 +71,9 @@ def create_net(args):
     kwargs["num_filters"] = args.num_filters
     kwargs["num_extra_stages"] = args.num_extra_stages
     kwargs["in_channels"] = args.in_channels
+    # # ablation
+    # kwargs["num_hylas"] = args.num_hylas
+    # kwargs["reduce_planes"] = args.reduce_planes
 
     net = model_dict[args.arch.lower()](**kwargs)
 

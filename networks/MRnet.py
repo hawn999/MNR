@@ -350,10 +350,14 @@ class MRNet(nn.Module):
         return input_features
 
     def forward(self, x, train=False):
+        x = x.view(-1, 1, 80, 80)
+        print(x.size())# [8, 16, 3, 80, 80]
         padding1 = torch.ones_like(x[:,0:1]).cuda()
         padding2 = torch.ones_like(x[:,0:1]).cuda()
         padding3 = torch.ones_like(x[:,0:1]).cuda()
         x = torch.cat([padding1, padding2, padding3,x],dim=1)
+        print(x.size())
+
         N, K, H, W = x.shape
         K0 = K - 8
         # assert C==1
@@ -467,5 +471,5 @@ class MRNet(nn.Module):
         # else:
         #     out_multihead = None
         # errors = torch.zeros([1,10]).cuda()
-
-        return input_features_low, errors
+        return out.view(-1, K0)  # , out_meta, out_multihead
+        return input_features_low, #errors
