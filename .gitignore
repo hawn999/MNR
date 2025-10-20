@@ -1,9 +1,17 @@
+<<<<<<< HEAD
 # 忽略一切
+=======
+# 忽略所有文件
+>>>>>>> origin/main
 *
 # 允许进入子目录（否则无法反选子目录里的文件）
 !*/
 # 只跟踪 Python 源码
 !*.py
 !**/*.py
+<<<<<<< HEAD
 # 把 .gitignore 自己也纳入版本控制
+=======
+# 自己把 .gitignore 也纳入版本控制
+>>>>>>> origin/main
 !.gitignore
