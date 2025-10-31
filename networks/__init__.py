@@ -3,7 +3,7 @@ from .predrnet_sraven import predrnet_sraven
 
 from .predrnet_v3 import predrnet_raven, predrnet_analogy, predrnet_mnr, hcvarr, scar, pred, mm, mrnet,mrnet_pric_raven
 from .HCVARR_RPV import hcvarr_rpv
-from .hpai import hpai_raven
+from .hpai import hpai_raven,cot_hpai_raven
 from .hpai_pric import hpai_pric_raven, hpai_pric_analogy
 from .predrnet_original_source_code import predrnet_original_raven
 from .hcv_pric_v2 import hcv_pric_v2_analogy
@@ -56,7 +56,8 @@ model_dict = {
 
     "cot_prb":predrnet_raven_cot,
     "cot_v3": cot_v3,
-    "cot_slot": cot_slot
+    "cot_slot": cot_slot,
+    "cot_hpai": cot_hpai_raven
 }
 
 

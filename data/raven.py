@@ -68,7 +68,8 @@ class RAVEN(Dataset):
                 )
         else:
             resize_image = data["image"]  # image
-        ## for resized data
+
+        # # for resized data
         # resize_image=data["image"]
         return resize_image, data, data_file
 

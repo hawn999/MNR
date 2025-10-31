@@ -177,6 +177,19 @@ def convert_to_rpm_matrix_v15(input, b, h, w):
 
     return output
 
+def convert_to_rpm_matrix_v15_mask34(input, b, h, w):
+    # b: batch
+    # h: height
+    # w: width
+    # 14 + 8 = 22
+    output = input.reshape(b, 22, -1, h, w)
+    output = torch.stack(
+        [torch.cat((output[:,:12], output[:,i].unsqueeze(1)), dim=1) for i in range(14, 22)],
+        dim=1
+    )
+
+    return output
+
 def convert_to_rpm_matrix_v6(input, b, h, w):
     # b: batch
     # h: height

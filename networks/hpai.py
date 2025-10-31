@@ -5,11 +5,11 @@ import torch.nn.functional as F
 from .swin_model import swinB as create_model
 
 from .network_utils import (
-    Classifier, 
-    ResBlock, 
-    ConvNormAct, 
+    Classifier,
+    ResBlock,
+    ConvNormAct,
     convert_to_rpm_matrix_v9,
-    convert_to_rpm_matrix_v6
+    convert_to_rpm_matrix_v6, convert_to_rpm_matrix_v15
 )
 
 
@@ -346,7 +346,10 @@ class HPAI(nn.Module):
         # for featr in hie_vis_out[1:]:
         for featr in xs:
             _, c, h, w = featr.size()
-            hie_reform_out.append(convert_to_rpm_matrix_v9(featr, b, h, w))
+            if self.num_contexts == 8:
+                hie_reform_out.append(convert_to_rpm_matrix_v9(featr, b, h, w))
+            elif self.num_contexts ==14:
+                hie_reform_out.append(convert_to_rpm_matrix_v15(featr, b, h, w))
                                   # [torch.Size([1, 8, 9, 64, 20, 20]), 
                                   #  torch.Size([1, 8, 9, 128, 10, 10]), 
                                   #  torch.Size([1, 8, 9, 256, 5, 5])]
@@ -405,6 +408,8 @@ class HPAI(nn.Module):
 def hpai_raven(**kwargs):
     return HPAI(**kwargs, num_contexts=8)
 
+def cot_hpai_raven(**kwargs):
+    return HPAI(**kwargs, num_contexts=14)
 
 def hpai_analogy(**kwargs):
     return HPAI(**kwargs, num_contexts=5, num_classes=4)
