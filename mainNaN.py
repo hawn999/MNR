@@ -13,27 +13,21 @@ import torch.backends.cudnn as cudnn
 import torch.optim
 import torch.utils.data
 import torchvision.transforms as transforms
-import torch.nn.functional as F
 
-from utils import AverageMeter, ProgressMeter, ToTensor, accuracy, normalize_image, parse_gpus, \
-    evaluate_cosine_similarity, total_correlation_penalty
+from utils import AverageMeter, ProgressMeter, ToTensor, accuracy, normalize_image, parse_gpus
 from report_acc_regime import init_acc_regime, update_acc_regime
 from loss import BinaryCrossEntropy
 from checkpoint import save_checkpoint, load_checkpoint
 from thop import profile
 from networks import create_net
-from muon import SingleDeviceMuonWithAuxAdam
+import torch.nn.functional as F
 
 parser = argparse.ArgumentParser(description='PredRNet: Neural Prediction Errors for Abstract Visual Reasoning')
 
 # dataset settings
-parser.add_argument('--dataset-dir',
-                    default='/home/scxhc1/nvme_data/resized_datasets_raven',
-                    # default='/home/scxhc1/MNR_IJCAI25/dataset/datasets',
+parser.add_argument('--dataset-dir', default='./',
                     help='path to dataset')
-parser.add_argument('--dataset-name',
-                    default='RAVEN-FAIR',
-                    # default='RPV',
+parser.add_argument('--dataset-name', default='MNR',
                     help='dataset name')
 parser.add_argument('-b', '--batch-size', default=128, type=int,
                     metavar='N',
@@ -46,7 +40,7 @@ parser.add_argument('-j', '--workers', default=16, type=int, metavar='N',
                     help='number of data loading workers (default: 16)')
 
 # network settings
-parser.add_argument('-a', '--arch', metavar='ARCH', default='predrnet_original_raven',
+parser.add_argument('-a', '--arch', metavar='ARCH', default='predrnet_mnr',
                     help='model architecture (default: resnet18)')
 parser.add_argument('--num-extra-stages', default=0, type=int,
                     help='number of extra normal residue blocks or predictive coding blocks')
@@ -75,7 +69,7 @@ parser.add_argument('--resume', default='', type=str, metavar='PATH',
                     help='path to latest checkpoint (default: none)')
 
 # others settings
-parser.add_argument("--ckpt", default="./ckpts/debug",
+parser.add_argument("--ckpt", default="./ckpts/test",
                     help="folder to output checkpoints")
 parser.add_argument('--seed', default=None, type=int,
                     help='seed for initializing training. ')
@@ -83,30 +77,23 @@ parser.add_argument('--gpu', default="0",
                     help='GPU id to use.')
 parser.add_argument('-p', '--print-freq', default=50, type=int,
                     metavar='N', help='print frequency (default: 50)')
-parser.add_argument("--fp16", action='store_true',default=True,
+parser.add_argument("--fp16", action='store_true',
                     help="whether to use fp16 for training")
-parser.add_argument('-e', '--evaluate', dest='evaluate', action='store_true', default=False,
+parser.add_argument('-e', '--evaluate', dest='evaluate', action='store_true',
                     help='evaluate model on test set')
-parser.add_argument('--show-detail', action='store_true', default=True,
+parser.add_argument('--show-detail', action='store_true', default=False,
                     help="whether to show detail accuracy on all sub-types")
 parser.add_argument('--subset', default='None', type=str,
                     help='subset selection for dataset')
 
-# ablation
-parser.add_argument('--reduce-planes', default=96, type=int,
+parser.add_argument('--reducer-planes', default=128, type=int,
                     help='channel_reducer input/output planes (must be multiple of 32)')
-parser.add_argument('--num-hylas', default=3, type=int,
-                    help='')
+# # check labels
+# parser.add_argument(
+#     "--debug-vis", default='False', type=bool
+# )
 
 alpha = 0.1
-parser.add_argument('--tc-weight', default=1e-3, type=float,
-                    help='weight of Total Correlation (decorrelation) regularizer')
-parser.add_argument('--num-slots', default=7, type=int,
-                    help='(optional) slots for ObjectCentricEncoder (if networks.create_net uses it)')
-parser.add_argument('--slot-dim', default=64, type=int,
-                    help='(optional) slot dimensionality for ObjectCentricEncoder')
-parser.add_argument('--lambda-cf', default=0.5, type=float,
-                    help='weight for the counterfactual contrastive loss')
 
 
 def random_rotate(img, p=0.1):
@@ -153,8 +140,6 @@ def get_data_loader(args, data_split='train', transform=None, subset=None):
         from data import Unicode as create_dataset
     elif 'MNR' in args.dataset_name:
         from data import MNR as create_dataset
-    elif 'SRAVEN' in args.dataset_name:
-        from data import SRAVEN_InMemory as create_dataset
     elif 'RPV' in args.dataset_name:
         from data import RPV as create_dataset
     else:
@@ -237,20 +222,19 @@ def main():
     main_worker(args)
 
 
-def soft_loss(student_logits, teacher_logits, T=1.0):
-    student_logits = student_logits.clamp(min=-100, max=100)
-    teacher_logits = teacher_logits.clamp(min=-100, max=100)
-    # Temperature softening
-    p_student = torch.sigmoid(student_logits / T)
-    p_teacher = torch.sigmoid(teacher_logits / T)
+# def soft_loss(student_logits, teacher_logits, T=1.0):
+#     student_logits = student_logits.clamp(min=-100, max=100)
+#     teacher_logits = teacher_logits.clamp(min=-100, max=100)
+#     # Temperature softening
+#     p_student = torch.sigmoid(student_logits / T)
+#     p_teacher = torch.sigmoid(teacher_logits / T)
 
-    # Clamp to prevent log(0) if needed
-    p_teacher = p_teacher.clamp(min=1e-6, max=1 - 1e-6)
+#     # Clamp to prevent log(0) if needed
+#     p_teacher = p_teacher.clamp(min=1e-6, max=1 - 1e-6)
 
-    # BCE loss between softened probabilities
-    loss = F.binary_cross_entropy(p_student, p_teacher.detach(), reduction='mean') * (T * T)
-    return loss
-
+#     # BCE loss between softened probabilities
+#     loss = F.binary_cross_entropy(p_student, p_teacher.detach(), reduction='mean') * (T * T)
+#     return loss
 
 def soft_loss(student_logits, teacher_logits, T=1.0):
     target = torch.sigmoid(teacher_logits / T)
@@ -288,20 +272,18 @@ def main_worker(args):
     # else:
     #     x = torch.randn(1, 16, args.image_size, args.image_size)
     # flops, params = profile(model_flops, inputs=(x,))
-    #
+
     # print("model [%s] - params: %.6fM" % (args.arch, params / 1e6))
     # print("model [%s] - FLOPs: %.6fG" % (args.arch, flops / 1e9))
-    #
+
     # args.log_file.write("--------------------------------------------------\n")
     # args.log_file.write("Network - " + args.arch + "\n")
     # args.log_file.write("Params - %.6fM" % (params / 1e6) + "\n")
     # args.log_file.write("FLOPs - %.6fG" % (flops / 1e9) + "\n")
 
-    # if args.evaluate == False:
-    #     print(model)
-    #     # print('e')
-    # if args.evaluate == True:
-    print(model)
+    if args.evaluate == False:
+        # print(model)
+        print('e')
 
     if not torch.cuda.is_available():
         print('using CPU, this will be slow')
@@ -312,40 +294,19 @@ def main_worker(args):
 
         # define loss function (criterion) and optimizer
     criterion = BinaryCrossEntropy().cuda(args.gpu)
-
-    # # 定义损失函数 (criterion) 和 optimizer
-    # # 事实路径使用您原来的 BinaryCrossEntropy 损失
-    # criterion_factual = BinaryCrossEntropy().cuda(args.gpu)
-    # # 反事实路径使用三元组损失
-    # criterion_cf = torch.nn.TripletMarginLoss(margin=1.0, p=2).cuda(args.gpu)
-
-    # muon
-    classifier_names = [name for name, _ in model.named_parameters() if "classifier" in name]
-    classifier_params = {p for name, p in model.named_parameters() if name in classifier_names}
-    param_groups = [
-        dict(params=list(classifier_params), use_muon=False, lr=args.lr, weight_decay=args.weight_decay),
-        dict(params=[p for name, p in model.named_parameters() if p not in classifier_params and p.ndim >= 2],
-             use_muon=True, lr=0.001, weight_decay=1e-5#args.weight_decay
-             ),
-        dict(params=[p for name, p in model.named_parameters() if p not in classifier_params and p.ndim < 2],
-             use_muon=False, lr=args.lr, weight_decay=args.weight_decay),
-    ]
-    optimizer = SingleDeviceMuonWithAuxAdam(param_groups)
-
-    # adam
-    # optimizer = torch.optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
+    optimizer = torch.optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
 
     if args.resume:
         model, optimizer, best_acc1, start_epoch = load_checkpoint(args, model, optimizer)
-        args.start_epoch = start_epoch
-        # args.start_epoch = 0
+        # args.start_epoch = start_epoch
+        args.start_epoch = 0
 
     # Data loading code
     if 'MNR' in args.dataset_name:
         tr_transform = transforms.Compose([
             transforms.RandomHorizontalFlip(p=0.3),
             transforms.RandomVerticalFlip(p=0.3),
-            # RollTransform(shift_range=(0, 80), dims=[1, 2], p=0.2), # for MNR
+            RollTransform(shift_range=(0, 80), dims=[1, 2], p=0.2),  # for MNR
             # transforms.Lambda(random_rotate),
             ToTensor()
         ])
@@ -353,7 +314,7 @@ def main_worker(args):
         tr_transform = transforms.Compose([
             transforms.RandomHorizontalFlip(p=0.3),
             transforms.RandomVerticalFlip(p=0.3),
-            RollTransform(shift_range=(0, 80), dims=[1, 2], p=0.2), # for MNR
+            # RollTransform(shift_range=(0, 80), dims=[1, 2], p=0.2), # for MNR
             # transforms.Lambda(random_rotate),
             ToTensor()
         ])
@@ -362,10 +323,8 @@ def main_worker(args):
     ])
 
     tr_loader = get_data_loader(args, data_split='train', transform=tr_transform, subset=args.subset)
-
     vl_loader = get_data_loader(args, data_split='val', transform=ts_transform, subset=args.subset)
     # vl_loader = get_data_loader(args, data_split='test',   transform=ts_transform, subset=args.subset)  # RPV
-
     ts_loader = get_data_loader(args, data_split='test', transform=ts_transform, subset=args.subset)
 
     args.log_file.write("Number of training samples: %d\n" % len(tr_loader.dataset))
@@ -375,10 +334,7 @@ def main_worker(args):
     args.log_file.write("--------------------------------------------------\n")
     args.log_file.close()
 
-
     if args.evaluate:
-        # sim
-        # evaluate_cosine_similarity(ts_loader,model,args)
         acc = validate(ts_loader, model, criterion, args, valid_set="Test")
         return
 
@@ -387,8 +343,7 @@ def main_worker(args):
 
     cont_epoch = 0
     best_epoch = 0
-    test_acc2  = 0
-
+    test_acc2 = 0
 
     for epoch in range(args.start_epoch, args.epochs):
 
@@ -440,7 +395,7 @@ def train(data_loader, model, criterion, optimizer, epoch, args):
     progress = ProgressMeter(
         len(data_loader),
         [batch_time, data_time, losses, top1],
-        prefix = "Epoch: [{}]".format(epoch))
+        prefix="Epoch: [{}]".format(epoch))
 
     param_groups = optimizer.param_groups[0]
     curr_lr = param_groups["lr"]
@@ -462,37 +417,27 @@ def train(data_loader, model, criterion, optimizer, epoch, args):
 
         images = normalize_image(images)
 
-
-
         # compute output
         if args.fp16:
             with torch.cuda.amp.autocast():
-
+                # output = model(images)
                 output = model(images)
-                # output,_ = model(images) #for DARR
-                loss = criterion(output, target)
+            # alpha = 0.7
+            # loss = (1-alpha)*criterion(output, target)+alpha*soft_loss(output1,output)
+            loss = criterion(output, target)
 
             args.scaler.scale(loss).backward()
-            # torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=5.0)
-
-            # args.scaler.unscale_(optimizer)
-            # torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=5.0)
-
             args.scaler.step(optimizer)
             args.scaler.update()
         else:
-            pass
-            # output = model(images)
-            # loss = criterion(output, target)
-            # # compute gradient and do SGD step
-            # loss.backward()
-            #
-            # args.scaler.unscale_(optimizer)
-            # # torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
-            # # optimizer.step()
+            output = model(images)
+            loss = criterion(output, target)
+            # compute gradient and do SGD step
+            loss.backward()
+            optimizer.step()
+
         # measure accuracy and record loss
         acc1 = accuracy(output, target)
-
         losses.update(loss.item(), images.size(0))
         top1.update(acc1[0][0], images.size(0))
 
@@ -501,7 +446,7 @@ def train(data_loader, model, criterion, optimizer, epoch, args):
         end = time.time()
 
         if i % args.print_freq == 0 or i == len(data_loader) - 1:
-            epoch_msg = progress.get_message(i+1)
+            epoch_msg = progress.get_message(i + 1)
             epoch_msg += ("\tLr  {:.4f}".format(curr_lr))
             print(epoch_msg)
 
@@ -542,9 +487,8 @@ def validate(data_loader, model, criterion, args, valid_set='Valid'):
             images = normalize_image(images)
 
             # compute outputs
+            # output = model(images)
             output = model(images)
-            # output,_ = model(images)#for DARR
-            # output = model(images, train=False)
 
             loss = criterion(output, target)
             losses.update(loss.item(), images.size(0))
@@ -574,17 +518,9 @@ def validate(data_loader, model, criterion, args, valid_set='Valid'):
                         acc_regime[key] = None
 
             mean_acc = 0
-            valid_regimes = 0
             for key, val in acc_regime.items():
-                if val is not None:
-                    mean_acc += val
-                    valid_regimes += 1
-                # mean_acc += val
-            if valid_regimes > 0:
-                mean_acc /= valid_regimes
-            else:
-                mean_acc /= top1.avg
-            # mean_acc /= len(acc_regime.keys())
+                mean_acc += val
+            mean_acc /= len(acc_regime.keys())
         else:
             mean_acc = top1.avg
 
@@ -600,6 +536,7 @@ def validate(data_loader, model, criterion, args, valid_set='Valid'):
     if args.show_detail:
         for key, val in acc_regime.items():
             print("configuration [{}] Acc {:.3f}".format(key, val))
+
     return mean_acc
 
 

@@ -44,10 +44,10 @@ def load_checkpoint(args, model, optimizer=None, verbose=True):
     # ==========================================================================================
 
     # ===============================load entire model==========================================
-    # # Load the entire state_dict if you want to load all weights
-    # model.load_state_dict(checkpoint['state_dict'], True)
-    # # print("Checkpoint Optimizer Parameter Groups:")
-    # # print(checkpoint["optimizer"]["param_groups"])
+    # Load the entire state_dict if you want to load all weights
+    model.load_state_dict(checkpoint['state_dict'], False)
+    # print("Checkpoint Optimizer Parameter Groups:")
+    # print(checkpoint["optimizer"]["param_groups"])
     # ==========================================================================================
     # if optimizer is not None and "optimizer" in checkpoint:
     #     optimizer.load_state_dict(checkpoint['optimizer'])

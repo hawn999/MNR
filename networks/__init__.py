@@ -11,8 +11,10 @@ from .hcv_pric_v2 import hcv_pric_v2_analogy
 from .DARR import darr_raven, darr_analogy
 from .DARR_sraven import darr_raven_sraven
 from .HCVARR import HCVARR
-from .cot_predrnet import predrnet_raven_cot
+from .cot_predrnet import predrnet_raven_cot, predrnet_raven_cot_mask34, predrnet_raven_cot_mask234, \
+    predrnet_raven_cot_mask4
 from .cot_v3 import cot_v3
+from .predNaN import predrnet_mnr as predNaN_mnr
 
 # graph
 from .slot import predrnet_mnr_graph,predrnet_raven_graph, cot_slot
@@ -23,6 +25,17 @@ from .slot_sraven import predrnet_sraven_graph
 
 
 model_dict = {
+    "prednan_mnr":predNaN_mnr,
+
+    "cot_prb": predrnet_raven_cot,
+    "cot_prb_mask234": predrnet_raven_cot_mask234,
+    "cot_prb_mask34": predrnet_raven_cot_mask34,
+    "cot_prb_mask4": predrnet_raven_cot_mask4,
+
+    "cot_v3": cot_v3,
+    "cot_slot": cot_slot,
+    "cot_hpai": cot_hpai_raven,
+
     "resnet4b": resnet4b,
     # "predrnet_raven": predrnet_raven_hcv,
     "predrnet_raven_graph": predrnet_raven_graph,
@@ -34,8 +47,6 @@ model_dict = {
     "pred": pred,
     "mm": mm,
     "mrnet": mrnet,
-    # "predrnet_mnr": predrnet_mnr_hcv,
-    "predrnet_mnr": predrnet_mnr_graph,
     "hcv":HCVARR,
     "predrnet_mnr_graph":predrnet_mnr_graph,
     "predrnet_mnr":predrnet_mnr,
@@ -53,11 +64,6 @@ model_dict = {
     "darr_raven": darr_raven,
     "darr_sraven":darr_raven_sraven,
     "darr_analogy": darr_analogy,
-
-    "cot_prb":predrnet_raven_cot,
-    "cot_v3": cot_v3,
-    "cot_slot": cot_slot,
-    "cot_hpai": cot_hpai_raven
 }
 
 

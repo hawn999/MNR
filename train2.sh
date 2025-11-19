@@ -10,13 +10,29 @@ path="/home/scxhc1/nvme_data/MNR_data/datasets/resized_datasets_raven"
 #path="/home/scxhh2/resized_datasets_raven"
 now=$(date +"%Y-%m-%d-%H-%M-%S")
 
-# error
-python -u main_error.py --dataset-name RAVEN --dataset-dir /home/scxhc1/nvme_data/resized_datasets_raven --gpu 0,1 --fp16 \
+# for v3 experiments
+# 33 r
+python -u main.py --dataset-name RAVEN --dataset-dir /home/scxhc1/nvme_data/datasets/resized_datasets_raven/ --gpu 0,1 --fp16 \
             --image-size 80 --epochs 200 --seed 3407 --batch-size 128 --lr 0.001 --wd 1e-5 \
-            -a predrnet_original_raven --num-extra-stages 3 --block-drop 0.1 --classifier-drop 0.1 \
-            --classifier-hidreduce 4 --ckpt ckpts/mlp_raven_error_\
-            --reduce-planes 128 --num-hylas 3 --workers 2 --in-channels 1\
-            2>&1 | tee log/mlp_raven_error.txt
+            -a predrnet_raven --num-extra-stages 3 --block-drop 0.1 --classifier-drop 0.1 \
+            --classifier-hidreduce 4 --ckpt ckpts/${now}_v3_\
+            --reduce-planes 96 --num-hylas 3 --workers 2 --in-channels 1\
+            2>&1 | tee log/${now}_v3_33_r_muon_004.txt
+
+# 54 r
+python -u main.py --dataset-name RAVEN --dataset-dir /home/scxhc1/nvme_data/datasets/resized_datasets_raven/ --gpu 0,1 --fp16 \
+            --image-size 80 --epochs 200 --seed 3407 --batch-size 128 --lr 0.001 --wd 1e-5 \
+            -a predrnet_raven --num-extra-stages 3 --block-drop 0.1 --classifier-drop 0.1 \
+            --classifier-hidreduce 4 --ckpt ckpts/${now}_v3_\
+            --reduce-planes 160 --num-hylas 4 --workers 2 --in-channels 1\
+            2>&1 | tee log/${now}_v3_54_r_muon_004.txt
+## error
+#python -u main_error.py --dataset-name RAVEN --dataset-dir /home/scxhc1/nvme_data/resized_datasets_raven --gpu 0,1 --fp16 \
+#            --image-size 80 --epochs 200 --seed 3407 --batch-size 128 --lr 0.001 --wd 1e-5 \
+#            -a predrnet_original_raven --num-extra-stages 3 --block-drop 0.1 --classifier-drop 0.1 \
+#            --classifier-hidreduce 4 --ckpt ckpts/mlp_raven_error_\
+#            --reduce-planes 128 --num-hylas 3 --workers 2 --in-channels 1\
+#            2>&1 | tee log/mlp_raven_error.txt
 
 
 #python -u main.py --dataset-name MNR --dataset-dir ./ --gpu 0,1 --fp16 \

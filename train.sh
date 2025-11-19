@@ -9,24 +9,51 @@ path="/home/scxhc1/nvme_data/MNR_data/datasets/resized_datasets_raven"
 #xz
 #path="/home/scxhh2/resized_datasets_raven"
 #h
+#/home/scxhh2/nvme_data/datasets
 #/home/scxhh2/nvme_data/cot_raven
-now=$(date +"%Y-%m-%d-%H-%M-%S")
 
-# prb
-python -u main.py --dataset-name I-RAVEN --dataset-dir /home/scxhc1/i-raven-cot --gpu 0,1 --fp16 \
+
+
+# for v3 experiments
+# 33 ir
+now=$(date +"%Y-%m-%d-%H-%M-%S")
+python -u main.py --dataset-name RAVEN --dataset-dir /home/scxhc1/nvme_data/datasets/resized_datasets_raven/ --gpu 0,1 --fp16 \
             --image-size 80 --epochs 200 --seed 3407 --batch-size 128 --lr 0.001 --wd 1e-5 \
-            -a cot_prb --num-extra-stages 3 --block-drop 0.1 --classifier-drop 0.1 \
-            --classifier-hidreduce 4 --ckpt ckpts/cot_prb_ir_adam_${now}\
-            --workers 2 --in-channels 1\
-            2>&1 | tee log/${now}_cot_prb_ir_adam_mask34.txt
+            -a predrnet_raven --num-extra-stages 3 --block-drop 0.1 --classifier-drop 0.1 \
+            --classifier-hidreduce 4 --ckpt ckpts/${now}_v3_\
+            --reduce-planes 128 --num-hylas 3 --workers 2 --in-channels 1\
+            2>&1 | tee log/${now}_v3_43_r_muon_003_noclip_norelu.txt
+
+now=$(date +"%Y-%m-%d-%H-%M-%S")
+python -u main.py --dataset-name RAVEN --dataset-dir /home/scxhc1/nvme_data/datasets/resized_datasets_raven/ --gpu 0,1 --fp16 \
+            --image-size 80 --epochs 200 --seed 3407 --batch-size 128 --lr 0.001 --wd 1e-5 \
+            -a predrnet_raven --num-extra-stages 3 --block-drop 0.1 --classifier-drop 0.1 \
+            --classifier-hidreduce 4 --ckpt ckpts/${now}_v3_\
+            --reduce-planes 96 --num-hylas 3 --workers 2 --in-channels 1\
+            2>&1 | tee log/${now}_v3_33_r_muon_003_noclip_norelu.txt
+## 44 r
+#python -u main.py --dataset-name RAVEN --dataset-dir /home/scxhc1/nvme_data/datasets/resized_datasets_raven/ --gpu 0,1 --fp16 \
+#            --image-size 80 --epochs 200 --seed 3407 --batch-size 128 --lr 0.001 --wd 1e-5 \
+#            -a predrnet_raven --num-extra-stages 3 --block-drop 0.1 --classifier-drop 0.1 \
+#            --classifier-hidreduce 4 --ckpt ckpts/${now}_v3_\
+#            --reduce-planes 128 --num-hylas 4 --workers 2 --in-channels 1\
+#            2>&1 | tee log/${now}_v3_44_r_muon_004.txt
+
+## prb
+#python -u main.py --dataset-name I-RAVEN --dataset-dir /home/scxhc1/nvme_data/cot_test/v2_test1 --gpu 0,1 --fp16 \
+#            --image-size 80 --epochs 200 --seed 3407 --batch-size 128 --lr 0.001 --wd 1e-5 \
+#            -a cot_prb --num-extra-stages 3 --block-drop 0.1 --classifier-drop 0.1 \
+#            --classifier-hidreduce 4 --ckpt ckpts/cot_prb_ir_adam_${now}\
+#            --workers 2 --in-channels 1\
+#            2>&1 | tee log/${now}_cotv3_prb_ir_adam.txt
 
 ## v3
-#python -u main.py --dataset-name I-RAVEN --dataset-dir /home/scxhc1/i-raven-cot --gpu 0,1 --fp16 \
+#python -u main.py --dataset-name I-RAVEN --dataset-dir /home/scxhc1/nvme_data/cot_test --gpu 0,1 --fp16 \
 #            --image-size 80 --epochs 200 --seed 3407 --batch-size 128 --lr 0.001 --wd 1e-5 \
-#            -a cot_slot --num-extra-stages 3 --block-drop 0.1 --classifier-drop 0.1 \
+#            -a cot_v3 --num-extra-stages 3 --block-drop 0.1 --classifier-drop 0.1 \
 #            --classifier-hidreduce 4 --ckpt ckpts/cot_slot_ir_adam_${now}\
 #            --reduce-planes 128 --num-hylas 3 --workers 2 --in-channels 1\
-#            2>&1 | tee log/${now}_cot_slot_ir_adam.txt
+#            2>&1 | tee log/${now}_cot_v3_ir_adam.txt
 
 #python -u main.py --dataset-name RAVEN --dataset-dir /home/scxhc1/nvme_data/datasets/resized_datasets_raven --gpu 0,1 --fp16 \
 #            --image-size 80 --epochs 200 --seed 3407 --batch-size 128 --lr 0.001 --wd 1e-5 \

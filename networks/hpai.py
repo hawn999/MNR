@@ -411,5 +411,14 @@ def hpai_raven(**kwargs):
 def cot_hpai_raven(**kwargs):
     return HPAI(**kwargs, num_contexts=14)
 
+def cot_hpai_raven_mask234(**kwargs):
+    return HPAI(**kwargs, num_contexts=11)
+
+def cot_hpai_raven_mask34(**kwargs):
+    return HPAI(**kwargs, num_contexts=12)
+
+def cot_hpai_raven_mask4(**kwargs):
+    return HPAI(**kwargs, num_contexts=13)
+
 def hpai_analogy(**kwargs):
     return HPAI(**kwargs, num_contexts=5, num_classes=4)

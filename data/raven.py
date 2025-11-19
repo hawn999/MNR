@@ -1,3 +1,127 @@
+# import os
+# import glob
+# import numpy as np
+# import cv2
+#
+# import torch
+# from torch.utils.data import Dataset
+#
+#
+# sub_folders = {'0': "center_single",
+#                '1': "in_center_single_out_center_single",
+#                '2': "up_center_single_down_center_single",
+#                '3': "left_center_single_right_center_single",
+#                '4': "distribute_four",
+#                '5': "distribute_nine",
+#                '6': "in_distribute_four_out_center_single"}
+#
+#
+# class RAVEN(Dataset):
+#     def __init__(
+#         self, dataset_dir, data_split=None, image_size=80,
+#         transform=None, subset=None
+#     ):
+#         self.dataset_dir = dataset_dir
+#         self.data_split = data_split
+#         self.image_size = image_size
+#         self.transform = transform
+#
+#         if subset == 'None':
+#             subsets = os.listdir(self.dataset_dir)
+#         else:
+#             subsets = [sub_folders[subset]]
+#
+#         self.file_names = []
+#         for i in subsets:
+#             file_names = [os.path.basename(f) for f in glob.glob(os.path.join(self.dataset_dir, i, "*_" + self.data_split + ".npz"))]
+#             self.file_names += [os.path.join(i, f) for f in file_names]
+#
+#
+#     def __len__(self):
+#         return len(self.file_names)
+#
+#     def _get_data(self, idx):
+#         data_file = self.file_names[idx]
+#
+#         data_path = os.path.join(self.dataset_dir, data_file)
+#         data = np.load(data_path)
+#
+#         # # for original data
+#         # image = data["image"].reshape(16, 160, 160)
+#         # if self.image_size != 160:
+#         #     resize_image = np.zeros((16, self.image_size, self.image_size))
+#         #     for idx in range(0, 16):
+#         #         resize_image[idx] = cv2.resize(
+#         #             image[idx], (self.image_size, self.image_size),
+#         #             interpolation = cv2.INTER_NEAREST
+#         #         )
+#         # else:
+#         #     resize_image = data["image"]#image
+#
+#         # for v2 test (original)
+#         image = data["image"].reshape(-1, 160, 160)
+#         if image.shape[0] != 22:
+#             raise ValueError("not 22 panels")
+#         if self.image_size != 160:
+#             resize_image = np.zeros((22, self.image_size, self.image_size))
+#             for idx in range(0, 22):
+#                 resize_image[idx] = cv2.resize(
+#                     image[idx], (self.image_size, self.image_size),
+#                     interpolation=cv2.INTER_NEAREST
+#                 )
+#         else:
+#             resize_image = data["image"]  # image
+#
+#         # # # for original 22 cot data
+#         # image = data["image"].reshape(22, 160, 160)
+#         # if self.image_size != 160:
+#         #     resize_image = np.zeros((22, self.image_size, self.image_size))
+#         #     for idx in range(0, 22):
+#         #         resize_image[idx] = cv2.resize(
+#         #             image[idx], (self.image_size, self.image_size),
+#         #             interpolation=cv2.INTER_NEAREST
+#         #         )
+#         # else:
+#         #     resize_image = data["image"]  # image
+#
+#         # # for resized data
+#         # resize_image=data["image"]
+#
+#         return resize_image, data, data_file
+#
+#     def __getitem__(self, idx):
+#         # image, data, data_file = self._get_data(idx)
+#
+#         tries = 0
+#         while tries < len(self.file_names):
+#             try:
+#                 image, data, data_file = self._get_data(idx)
+#                 break
+#             except ValueError:
+#                 idx = (idx + 1) % len(self.file_names)
+#                 tries += 1
+#         else:
+#             raise RuntimeError("没有找到满足 22 面板的样本。")
+#
+#         # Get additional data
+#         target = data["target"]
+#         meta_target = data["meta_target"]
+#         structure = data["structure"]
+#         structure_encoded = data["meta_matrix"]
+#         del data
+#
+#         if self.transform:
+#             image = torch.from_numpy(image).type(torch.float32)
+#             image = self.transform(image)
+#
+#         target = torch.tensor(target, dtype=torch.long)
+#         meta_target = torch.tensor(meta_target, dtype=torch.float32)
+#         structure_encoded = torch.tensor(structure_encoded, dtype=torch.float32)
+#
+#         return image, target, meta_target, structure_encoded, data_file
+#
+#
+# original raven.py
 import os
 import glob
 import numpy as np
@@ -6,9 +130,8 @@ import cv2
 import torch
 from torch.utils.data import Dataset
 
-
-sub_folders = {'0': "center_single", 
-               '1': "in_center_single_out_center_single", 
+sub_folders = {'0': "center_single",
+               '1': "in_center_single_out_center_single",
                '2': "up_center_single_down_center_single",
                '3': "left_center_single_right_center_single",
                '4': "distribute_four",
@@ -18,8 +141,8 @@ sub_folders = {'0': "center_single",
 
 class RAVEN(Dataset):
     def __init__(
-        self, dataset_dir, data_split=None, image_size=80, 
-        transform=None, subset=None
+            self, dataset_dir, data_split=None, image_size=80,
+            transform=None, subset=None
     ):
         self.dataset_dir = dataset_dir
         self.data_split = data_split
@@ -33,9 +156,9 @@ class RAVEN(Dataset):
 
         self.file_names = []
         for i in subsets:
-            file_names = [os.path.basename(f) for f in glob.glob(os.path.join(self.dataset_dir, i, "*_" + self.data_split + ".npz"))]
+            file_names = [os.path.basename(f) for f in
+                          glob.glob(os.path.join(self.dataset_dir, i, "*_" + self.data_split + ".npz"))]
             self.file_names += [os.path.join(i, f) for f in file_names]
-
 
     def __len__(self):
         return len(self.file_names)
@@ -46,31 +169,17 @@ class RAVEN(Dataset):
         data_path = os.path.join(self.dataset_dir, data_file)
         data = np.load(data_path)
 
-        # # for original data
-        # image = data["image"].reshape(16, 160, 160)
-        # if self.image_size != 160:
-        #     resize_image = np.zeros((16, self.image_size, self.image_size))
-        #     for idx in range(0, 16):
-        #         resize_image[idx] = cv2.resize(
-        #             image[idx], (self.image_size, self.image_size),
-        #             interpolation = cv2.INTER_NEAREST
-        #         )
-        # else:
-        #     resize_image = data["image"]#image
-        # for original cot data
-        image = data["image"].reshape(22, 160, 160)
+        image = data["image"].reshape(16, 160, 160)
         if self.image_size != 160:
-            resize_image = np.zeros((22, self.image_size, self.image_size))
-            for idx in range(0, 22):
+            resize_image = np.zeros((16, self.image_size, self.image_size))
+            for idx in range(0, 16):
                 resize_image[idx] = cv2.resize(
                     image[idx], (self.image_size, self.image_size),
-                    interpolation=cv2.INTER_NEAREST
+                    interpolation = cv2.INTER_NEAREST
                 )
         else:
-            resize_image = data["image"]  # image
-
-        # # for resized data
-        # resize_image=data["image"]
+            resize_image = data["image"]#image
+        # resize_image = data["image"]
         return resize_image, data, data_file
 
     def __getitem__(self, idx):
@@ -84,7 +193,7 @@ class RAVEN(Dataset):
         del data
 
         if self.transform:
-            image = torch.from_numpy(image).type(torch.float32)         
+            image = torch.from_numpy(image).type(torch.float32)
             image = self.transform(image)
 
         target = torch.tensor(target, dtype=torch.long)
@@ -93,4 +202,3 @@ class RAVEN(Dataset):
 
         return image, target, meta_target, structure_encoded, data_file
 
-    
