@@ -11,10 +11,10 @@ from .hcv_pric_v2 import hcv_pric_v2_analogy
 from .DARR import darr_raven, darr_analogy
 from .DARR_sraven import darr_raven_sraven
 from .HCVARR import HCVARR
-from .cot_predrnet import predrnet_raven_cot, predrnet_raven_cot_mask34, predrnet_raven_cot_mask234, \
-    predrnet_raven_cot_mask4
+from .cot_predrnet import predrnet_raven_cot, predrnet_raven_cot_mask3, predrnet_raven_cot_mask34, predrnet_raven_cot_mask234, predrnet_raven_cot_mask1234, \
+    predrnet_raven_cot_mask4, predrnet_raven_mask12, predrnet_raven_nomask
 from .cot_v3 import cot_v3
-from .predNaN import predrnet_mnr as predNaN_mnr
+# from .predNaN import predrnet_mnr as predNaN_mnr
 
 # graph
 from .slot import predrnet_mnr_graph,predrnet_raven_graph, cot_slot
@@ -22,15 +22,24 @@ from .slot_sraven import predrnet_sraven_graph
 
 # from .test import predrnet_mnr_test
 # from .casual_predrnet import causal_predrnet_mnr
-
+from .vit import predrnet_raven_vit
+from .predrnet_test import test_predrnet_raven,test_predrnet_mnr
 
 model_dict = {
-    "prednan_mnr":predNaN_mnr,
+    # "prednan_mnr":predNaN_mnr,
+    "predrnet_mnr_test": test_predrnet_mnr,
+    "predrnet_raven_test": test_predrnet_raven,
+    
+    "vit":predrnet_raven_vit,
 
     "cot_prb": predrnet_raven_cot,
+    "cot_prb_mask1234": predrnet_raven_cot_mask1234,
+    "cot_prb_mask3": predrnet_raven_cot_mask3,
     "cot_prb_mask234": predrnet_raven_cot_mask234,
     "cot_prb_mask34": predrnet_raven_cot_mask34,
     "cot_prb_mask4": predrnet_raven_cot_mask4,
+    "raven_mask12": predrnet_raven_mask12,
+    "raven_nomask": predrnet_raven_nomask,
 
     "cot_v3": cot_v3,
     "cot_slot": cot_slot,
@@ -79,8 +88,8 @@ def create_net(args):
     kwargs["num_extra_stages"] = args.num_extra_stages
     kwargs["in_channels"] = args.in_channels
     # # ablation
-    # kwargs["num_hylas"] = args.num_hylas
-    # kwargs["reduce_planes"] = args.reduce_planes
+    kwargs["num_hylas"] = args.num_hylas
+    kwargs["reduce_planes"] = args.reduce_planes
 
     net = model_dict[args.arch.lower()](**kwargs)
 

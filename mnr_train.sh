@@ -20,7 +20,8 @@ python -u main.py --dataset-name MNR --dataset-dir /home/scxhc1/nvme_data/datase
             -a predrnet_mnr --num-extra-stages 3 --block-drop 0.1 --classifier-drop 0.1 \
             --classifier-hidreduce 4 --ckpt ckpts/${now}_v3_ \
             --reduce-planes 128 --num-hylas 3 --workers 2 --in-channels 1 \
-            2>&1 | tee log/${now}_predNaN_43_mnr_muon001_noclip_norelu_noRoll.txt
+            2>&1 | tee log/${now}_predNaN_43_mnr_muon003_clip_norelu_noRoll.txt
+
 #            2>&1 | tee log/${now}_v3_43_mnr_adam_clip5.txt
 
 #now=$(date +"%Y-%m-%d-%H-%M-%S")

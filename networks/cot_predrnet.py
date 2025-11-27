@@ -7,9 +7,12 @@ from .network_utils import (
     Classifier,
     ResBlock,
     ConvNormAct,
+    convert_to_rpm_matrix_v15_mask1234,
+    convert_to_rpm_matrix_v15_mask3,
     convert_to_rpm_matrix_v9,
     convert_to_rpm_matrix_v6, convert_to_rpm_matrix_v15, convert_to_rpm_matrix_v15_mask34,
-    convert_to_rpm_matrix_v15_mask4, convert_to_rpm_matrix_v15_mask234
+    convert_to_rpm_matrix_v15_mask4, convert_to_rpm_matrix_v15_mask234,
+    convert_to_rpm_matrix_v9_mask12
 )
 
 
@@ -57,7 +60,7 @@ class PredRNet(nn.Module):
     def __init__(self, num_filters=32, block_drop=0.0, classifier_drop=0.0,
                  classifier_hidreduce=1.0, in_channels=1, num_classes=8,
                  num_extra_stages=1, reasoning_block=PredictiveReasoningBlock,
-                 num_contexts=14):
+                 num_contexts=14,reduce_planes=128, num_hylas=3):
 
         super().__init__()
 
@@ -150,25 +153,25 @@ class PredRNet(nn.Module):
 
         if self.num_contexts == 8:
             x = convert_to_rpm_matrix_v9(x, b, h, w)
+        elif self.num_contexts == 6:
+            x = convert_to_rpm_matrix_v9_mask12(x, b, h, w)
         elif self.num_contexts == 14:
             x = convert_to_rpm_matrix_v15(x, b, h, w)
         elif self.num_contexts == 13:
-            x = convert_to_rpm_matrix_v15_mask4(x, b, h, w)
+            # x = convert_to_rpm_matrix_v15_mask4(x, b, h, w)
+            x = convert_to_rpm_matrix_v15_mask3(x, b, h, w)
         elif self.num_contexts == 12:
             x = convert_to_rpm_matrix_v15_mask34(x, b, h, w)
         elif self.num_contexts == 11:
             x = convert_to_rpm_matrix_v15_mask234(x, b, h, w)
+        elif self.num_contexts == 10:
+            x = convert_to_rpm_matrix_v15_mask1234(x, b, h, w)
         else:
             x = convert_to_rpm_matrix_v6(x, b, h, w)
 
-        # # # mask 4
-        # # x = x.reshape(b * self.ou_channels, self.num_contexts, -1, h * w)
-        # # # mask 34
-        # # x = x.reshape(b * self.ou_channels, self.num_contexts - 1, -1, h * w)
-        # # # mask 234
-        # x = x.reshape(b * self.ou_channels, self.num_contexts - 2, -1, h * w)
-        # no mask
+        # for all
         x = x.reshape(b * self.ou_channels, self.num_contexts + 1, -1, h * w)
+
 
         # e.g. [b,9,c,l] -> [b,c,9,l] (l=h*w)
         x = x.permute(0, 2, 1, 3)
@@ -184,9 +187,20 @@ class PredRNet(nn.Module):
 
         return out.view(b, self.ou_channels)
 
+def predrnet_raven_nomask(**kwargs):
+    return PredRNet(**kwargs, num_contexts=8)
+
+def predrnet_raven_mask12(**kwargs):
+    return PredRNet(**kwargs, num_contexts=6)
 
 def predrnet_raven_cot(**kwargs):
     return PredRNet(**kwargs, num_contexts=14)
+
+def predrnet_raven_cot_mask1234(**kwargs):
+    return PredRNet(**kwargs, num_contexts=10)
+
+def predrnet_raven_cot_mask3(**kwargs):
+    return PredRNet(**kwargs, num_contexts=13)
 
 def predrnet_raven_cot_mask234(**kwargs):
     return PredRNet(**kwargs, num_contexts=11)

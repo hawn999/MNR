@@ -169,10 +169,10 @@ class RAVEN(Dataset):
         data_path = os.path.join(self.dataset_dir, data_file)
         data = np.load(data_path)
 
-        image = data["image"].reshape(16, 160, 160)
+        image = data["image"].reshape(-1, 160, 160)
         if self.image_size != 160:
-            resize_image = np.zeros((16, self.image_size, self.image_size))
-            for idx in range(0, 16):
+            resize_image = np.zeros((image.shape[0], self.image_size, self.image_size))
+            for idx in range(0, image.shape[0]):
                 resize_image[idx] = cv2.resize(
                     image[idx], (self.image_size, self.image_size),
                     interpolation = cv2.INTER_NEAREST

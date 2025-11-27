@@ -28,25 +28,25 @@ parser = argparse.ArgumentParser(description='PredRNet: Neural Prediction Errors
 
 # dataset settings
 parser.add_argument('--dataset-dir',
-                    default='/home/scxhc1/nvme_data/datasets',
+                    default='/home/scxhc1/nvme_data/resized_datasets_raven',
                     # default='/home/scxhc1/MNR_IJCAI25/dataset/datasets',
                     help='path to dataset')
 parser.add_argument('--dataset-name',
                     default='RAVEN-FAIR',
                     # default='RPV',
                     help='dataset name')
-parser.add_argument('-b', '--batch-size', default=32, type=int,
+parser.add_argument('-b', '--batch-size', default=128, type=int,
                     metavar='N',
                     help='mini-batch size (default: 128), this is the total '
                          'batch size of all GPUs on the current node when '
                          'using Data Parallel or Distributed Data Parallel')
 parser.add_argument('--image-size', default=80, type=int,
                     help='image size')
-parser.add_argument('-j', '--workers', default=2, type=int, metavar='N',
+parser.add_argument('-j', '--workers', default=16, type=int, metavar='N',
                     help='number of data loading workers (default: 16)')
 
 # network settings
-parser.add_argument('-a', '--arch', metavar='ARCH', default='vit',
+parser.add_argument('-a', '--arch', metavar='ARCH', default='predrnet_original_raven',
                     help='model architecture (default: resnet18)')
 parser.add_argument('--num-extra-stages', default=0, type=int,
                     help='number of extra normal residue blocks or predictive coding blocks')
@@ -313,21 +313,27 @@ def main_worker(args):
         # define loss function (criterion) and optimizer
     criterion = BinaryCrossEntropy().cuda(args.gpu)
 
-    # muon
-    classifier_names = [name for name, _ in model.named_parameters() if "classifier" in name]
-    classifier_params = {p for name, p in model.named_parameters() if name in classifier_names}
-    param_groups = [
-        dict(params=list(classifier_params), use_muon=False, lr=args.lr, weight_decay=args.weight_decay),
-        dict(params=[p for name, p in model.named_parameters() if p not in classifier_params and p.ndim >= 2],
-             use_muon=True, lr=0.004, weight_decay=1e-5#args.weight_decay
-             ),
-        dict(params=[p for name, p in model.named_parameters() if p not in classifier_params and p.ndim < 2],
-             use_muon=False, lr=args.lr, weight_decay=args.weight_decay),
-    ]
-    optimizer = SingleDeviceMuonWithAuxAdam(param_groups)
+    # # 定义损失函数 (criterion) 和 optimizer
+    # # 事实路径使用您原来的 BinaryCrossEntropy 损失
+    # criterion_factual = BinaryCrossEntropy().cuda(args.gpu)
+    # # 反事实路径使用三元组损失
+    # criterion_cf = torch.nn.TripletMarginLoss(margin=1.0, p=2).cuda(args.gpu)
+
+    # # muon
+    # classifier_names = [name for name, _ in model.named_parameters() if "classifier" in name]
+    # classifier_params = {p for name, p in model.named_parameters() if name in classifier_names}
+    # param_groups = [
+    #     dict(params=list(classifier_params), use_muon=False, lr=args.lr, weight_decay=args.weight_decay),
+    #     dict(params=[p for name, p in model.named_parameters() if p not in classifier_params and p.ndim >= 2],
+    #          use_muon=True, lr=0.001, weight_decay=1e-5#args.weight_decay
+    #          ),
+    #     dict(params=[p for name, p in model.named_parameters() if p not in classifier_params and p.ndim < 2],
+    #          use_muon=False, lr=args.lr, weight_decay=args.weight_decay),
+    # ]
+    # optimizer = SingleDeviceMuonWithAuxAdam(param_groups)
 
     # adam
-    # optimizer = torch.optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
+    optimizer = torch.optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
 
     if args.resume:
         model, optimizer, best_acc1, start_epoch = load_checkpoint(args, model, optimizer)
@@ -339,7 +345,7 @@ def main_worker(args):
         tr_transform = transforms.Compose([
             transforms.RandomHorizontalFlip(p=0.3),
             transforms.RandomVerticalFlip(p=0.3),
-            RollTransform(shift_range=(0, 80), dims=[1, 2], p=0.2), # for MNR
+            # RollTransform(shift_range=(0, 80), dims=[1, 2], p=0.2), # for MNR
             # transforms.Lambda(random_rotate),
             ToTensor()
         ])
@@ -377,7 +383,7 @@ def main_worker(args):
         return
 
     if args.fp16:
-        args.scaler = torch.amp.GradScaler('cuda')
+        args.scaler = torch.cuda.amp.GradScaler()
 
     cont_epoch = 0
     best_epoch = 0
@@ -460,7 +466,7 @@ def train(data_loader, model, criterion, optimizer, epoch, args):
 
         # compute output
         if args.fp16:
-            with torch.amp.autocast('cuda'):
+            with torch.cuda.amp.autocast():
 
                 output = model(images)
                 # output,_ = model(images) #for DARR

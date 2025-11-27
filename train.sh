@@ -15,22 +15,37 @@ path="/home/scxhc1/nvme_data/MNR_data/datasets/resized_datasets_raven"
 
 
 # for v3 experiments
-# 33 ir
+# 33
 now=$(date +"%Y-%m-%d-%H-%M-%S")
-python -u main.py --dataset-name RAVEN --dataset-dir /home/scxhc1/nvme_data/datasets/resized_datasets_raven/ --gpu 0,1 --fp16 \
+python -u main.py --dataset-name RAVEN --dataset-dir /home/scxhc1/nvme_data/datasets/ --gpu 0,1 --fp16 \
             --image-size 80 --epochs 200 --seed 3407 --batch-size 128 --lr 0.001 --wd 1e-5 \
-            -a predrnet_raven --num-extra-stages 3 --block-drop 0.1 --classifier-drop 0.1 \
+            -a predrnet_raven_test --num-extra-stages 3 --block-drop 0.1 --classifier-drop 0.1 \
             --classifier-hidreduce 4 --ckpt ckpts/${now}_v3_\
             --reduce-planes 128 --num-hylas 3 --workers 2 --in-channels 1\
-            2>&1 | tee log/${now}_v3_43_r_muon_003_noclip_norelu.txt
+            2>&1 | tee log/${now}_v3_43_r_muon_004_noclip_relu_nodropout.txt
 
 now=$(date +"%Y-%m-%d-%H-%M-%S")
-python -u main.py --dataset-name RAVEN --dataset-dir /home/scxhc1/nvme_data/datasets/resized_datasets_raven/ --gpu 0,1 --fp16 \
+python -u main.py --dataset-name I-RAVEN --dataset-dir /home/scxhc1/nvme_data/datasets/ --gpu 0,1 --fp16 \
             --image-size 80 --epochs 200 --seed 3407 --batch-size 128 --lr 0.001 --wd 1e-5 \
-            -a predrnet_raven --num-extra-stages 3 --block-drop 0.1 --classifier-drop 0.1 \
+            -a predrnet_raven_test --num-extra-stages 3 --block-drop 0.1 --classifier-drop 0.1 \
             --classifier-hidreduce 4 --ckpt ckpts/${now}_v3_\
-            --reduce-planes 96 --num-hylas 3 --workers 2 --in-channels 1\
-            2>&1 | tee log/${now}_v3_33_r_muon_003_noclip_norelu.txt
+            --reduce-planes 128 --num-hylas 3 --workers 2 --in-channels 1\
+            2>&1 | tee log/${now}_v3_43_ir_muon_004_noclip_relu_nodropout.txt
+
+# python -u main.py --dataset-name MNR --dataset-dir /home/scxhc1/nvme_data/datasets/ --gpu 0,1 --fp16 \
+#             --image-size 80 --epochs 200 --seed 3407 --batch-size 128 --lr 0.001 --wd 1e-5 \
+#             -a predrnet_mnr --num-extra-stages 3 --block-drop 0.1 --classifier-drop 0.1 \
+#             --classifier-hidreduce 4 --ckpt ckpts/${now}_v3_\
+#             --reduce-planes 96 --num-hylas 3 --workers 2 --in-channels 1\
+#             2>&1 | tee log/${now}_v3_33_mnr_muon_004_noclip_norelu_nodrop.txt
+
+# now=$(date +"%Y-%m-%d-%H-%M-%S")
+# python -u main.py --dataset-name RAVEN --dataset-dir /home/scxhc1/nvme_data/datasets/resized_datasets_raven/ --gpu 0,1 --fp16 \
+#             --image-size 80 --epochs 200 --seed 3407 --batch-size 128 --lr 0.001 --wd 1e-5 \
+#             -a predrnet_raven --num-extra-stages 3 --block-drop 0.1 --classifier-drop 0.1 \
+#             --classifier-hidreduce 4 --ckpt ckpts/${now}_v3_\
+#             --reduce-planes 96 --num-hylas 3 --workers 2 --in-channels 1\
+#             2>&1 | tee log/${now}_v3_33_r_muon_003_noclip_norelu.txt
 ## 44 r
 #python -u main.py --dataset-name RAVEN --dataset-dir /home/scxhc1/nvme_data/datasets/resized_datasets_raven/ --gpu 0,1 --fp16 \
 #            --image-size 80 --epochs 200 --seed 3407 --batch-size 128 --lr 0.001 --wd 1e-5 \

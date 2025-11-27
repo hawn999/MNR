@@ -1,9 +1,9 @@
-#python main.py --dataset-name RPV --dataset-dir /home/scxhc1/MNR_IJCAI25/dataset/datasets --gpu 0,1 --fp16 \
-#                --image-size 80 --epochs 100 --seed 3407 --batch-size 16 --lr 0.001 --wd 1e-5 \
-#                -a predrnet_raven --num-extra-stages 3 --block-drop 0.1 --classifier-drop 0.1 --in-channels 3 \
-#                --classifier-hidreduce 4 --ckpt ckpts/43_rpv \
-#                --reduce-planes 128 --num-hylas 3 \
-#                2>&1 | tee log/43_rpv_test.log
+python main.py --dataset-name RPV --dataset-dir /home/scxhc1/MNR_IJCAI25/dataset/datasets --gpu 0,1 --fp16 \
+               --image-size 80 --epochs 100 --seed 3407 --batch-size 16 --lr 0.001 --wd 1e-5 \
+               -a predrnet_raven --num-extra-stages 3 --block-drop 0.1 --classifier-drop 0.1 --in-channels 3 \
+               --classifier-hidreduce 4 --ckpt ckpts/43_rpv \
+               --reduce-planes 128 --num-hylas 3 \
+               2>&1 | tee log/43_rpv_test.log
 
 #python -u main.py --dataset-name RPV --dataset-dir /home/scxhc1/MNR_IJCAI25/dataset/datasets --gpu 0,1 --fp16 \
 #                --image-size 80 --epochs 100 --seed 3407 --batch-size 16 --lr 0.001 --wd 1e-5 \

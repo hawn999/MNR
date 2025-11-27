@@ -151,8 +151,9 @@ class FusionAttention(nn.Module):
         atten = self.drop1(F.softmax(atten / math.sqrt(self.head_dim), dim=-1))
         x = (atten @ v)
 
-        # x = self.m(x.permute(0,1,3,2,4).reshape(b_,t_,l_,c_))+shortcut
-        x = self.drop2(self.m(x.permute(0,1,3,2,4).reshape(b_,t_,l_,c_))) + shortcut
+        x = self.m(x.permute(0,1,3,2,4).reshape(b_,t_,l_,c_))+shortcut
+        # mnr
+        # x = self.drop2(self.m(x.permute(0,1,3,2,4).reshape(b_,t_,l_,c_))) + shortcut
         return x
 
 class PredictionIntraAttention(nn.Module):
@@ -218,8 +219,8 @@ class PredictionIntraAttention(nn.Module):
         else:
             x = torch.cat([p, x[:,:,:,6:]], dim=-1)
         # print(x.shape)
-        # return x
-        return self.drop2(x)
+        return x
+        # return self.drop2(x)
 
 class GIPRB(nn.Module):
 
@@ -335,13 +336,12 @@ class PredictionInterAttention(nn.Module):
         # num_contexts = 4 or 9
         con = torch.cat([x[:,:,:self.num_contexts-1], pre_prompt], dim=2)
         p = self.p(con).contiguous()
-
         p = F.relu(x[:,:,self.num_contexts-1:]) - p
         # p = x[:,:,self.num_contexts-1:] - p
       
         x = torch.cat([x[:,:,:self.num_contexts-1], p], dim=2)
-        # return x
-        return self.drop2(x)
+        return x
+        # return self.drop2(x)
 
 
 class PredictiveReasoningBlock(nn.Module):
@@ -419,7 +419,7 @@ class PredictiveReasoningBlock(nn.Module):
         x = x.permute(0, 2, 3, 1)
 
         for l in range(self.num_hylas):
-            x = getattr(self, f"norm{l}")(x)
+            # x = getattr(self, f"norm{l}")(x)
             x = getattr(self, f"hyla{l}")(x, x)
 
         x = x.permute(0, 3, 1, 2).contiguous()
@@ -571,6 +571,15 @@ class Alignment(nn.Module):
         shortcut = self.downsample(x)
         x = x.permute(0,2,3,1)
 
+        # if num_contexts == 3:
+        #     c1, c2, c3, c4 = self.position1(x[:,0]), self.position2(x[:,1]), self.position3(x[:,2]), self.position4(x[:,3])
+        #     x = torch.stack([c1, c2, c3, c4], dim=1)
+        # elif num_contexts == 5:
+        #     c1, c2, c3, c4, c5, c6 = self.position1(x[:,0]), self.position2(x[:,1]), self.position3(x[:,2]), self.position4(x[:,3]), self.position1(x[:,4]), self.position2(x[:,5])
+        #     x = torch.stack([c1, c2, c3, c4, c5, c6], dim=1)    
+        # elif num_contexts == 8:
+        #     c1, c2, c3, c4, c5, c6, c7, c8, c9 = self.position1(x[:,0]), self.position2(x[:,1]), self.position3(x[:,2]), self.position4(x[:,3]), self.position1(x[:,4]), self.position2(x[:,5]), self.position3(x[:,6]), self.position4(x[:,7]), self.position4(x[:,8])
+        #     x = torch.stack([c1, c2, c3, c4, c5, c6, c7, c8, c9], dim=1)
         x = self.selfatten(x).permute(0,3,1,2)
         out = self.drop(x)+shortcut
         if self.ffn:
@@ -707,13 +716,13 @@ class PredRNet(nn.Module):
         return out.view(b, self.ou_channels)#, xis
     
 
-def predrnet_raven(**kwargs):
+def test_predrnet_raven(**kwargs):
     return PredRNet(**kwargs, num_contexts=8)
 
-def predrnet_analogy(**kwargs):
+def test_predrnet_analogy(**kwargs):
     return PredRNet(**kwargs, num_contexts=5, num_classes=4)
 
-def predrnet_mnr(**kwargs):
+def test_predrnet_mnr(**kwargs):
     return PredRNet(**kwargs, num_contexts=3)
 
 def hcvarr(**kwargs):

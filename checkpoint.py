@@ -33,14 +33,14 @@ def load_checkpoint(args, model, optimizer=None, verbose=True):
     #     print(f"{k}: {v.shape}")
 
     # ===============================load encoders==============================================
-    # Filter only encoder weights (assuming they are named 'res0', 'res1', etc.)
-    encoder_weights = {k: v for k, v in checkpoint["state_dict"].items() if "res" in k}
-    # Check if encoder weights exist
-    assert len(encoder_weights) > 0, "No encoder weights found in checkpoint! Check if 'res' layers exist."
-    # Print encoder layer names being loaded
-    print(f"Found {len(encoder_weights)} encoder weights: {list(encoder_weights.keys())[:5]}...")
-    # Load encoder weights only
-    model.load_state_dict(encoder_weights, strict=False)
+    # # Filter only encoder weights (assuming they are named 'res0', 'res1', etc.)
+    # encoder_weights = {k: v for k, v in checkpoint["state_dict"].items() if "res" in k}
+    # # Check if encoder weights exist
+    # assert len(encoder_weights) > 0, "No encoder weights found in checkpoint! Check if 'res' layers exist."
+    # # Print encoder layer names being loaded
+    # print(f"Found {len(encoder_weights)} encoder weights: {list(encoder_weights.keys())[:5]}...")
+    # # Load encoder weights only
+    # model.load_state_dict(encoder_weights, strict=False)
     # ==========================================================================================
 
     # ===============================load entire model==========================================
