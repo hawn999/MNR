@@ -58,6 +58,7 @@ python main.py --dataset-name RAVEN --dataset-dir your_dataset_root_dir --gpu 0,
                --image-size 80 -a model_name \
                -e --resume your_checkpoint_dir/model_best.pth.tar \
                --show-detail
+```
 
 ## Special Thanks
 
